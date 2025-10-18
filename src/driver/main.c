@@ -2,6 +2,7 @@
 #include <ntifs.h>
 #include <dontuse.h>
 #include <suppress.h>
+#include <ntddk.h>
 #include <wdm.h>
 
 #pragma prefast(disable : __WARNING_ENCODE_MEMBER_FUNCTION_POINTER, \
@@ -21,6 +22,17 @@ static ULONG_PTR OperationStatusCtx = 1;
 #define DBG_TRACE_ALL 0xffffffff
 
 static ULONG gTraceFlags = DBG_DEBUG | DBG_ERROR | DBG_WARN;
+
+typedef struct _HANDLE_CTX {
+    FILE_ID_128 FileId;
+    ULONG VolumeSerial;
+    PSID UserSid;
+    ACCESS_MASK GrantedAccess;
+} HANDLE_CTX, *PHANDLE_CTX;
+
+typedef struct _PRE_CTX {
+    PSID UserSid;
+} PRE_CTX, *PPRE_CTX;
 
 #define DBG_PRINT(_dbgLevel, _string) \
     (FlagOn(gTraceFlags, (_dbgLevel)) ? DbgPrint _string : ((int)0))
@@ -56,7 +68,7 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
                      _In_ PCFLT_RELATED_OBJECTS FltObjects,
                      _Flt_CompletionContext_Outptr_ PVOID *CompletionContext);
 
-VOID OperationStatucCallback(_In_ PCFLT_RELATED_OBJECTS FltObjects,
+VOID OperationStatusCallback(_In_ PCFLT_RELATED_OBJECTS FltObjects,
                              _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
                              _In_ NTSTATUS OperationStatus,
                              _In_ PVOID RequesterContext);
@@ -67,10 +79,11 @@ PostOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
                       _In_opt_ PVOID CompletionContext,
                       _In_ FLT_POST_OPERATION_FLAGS Flags);
 
-FLT_PREOP_CALLBACK_STATUS
-PreOperationNoPostOperationCallback(
-    _Inout_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext);
+FLT_POSTOP_CALLBACK_STATUS
+NoPostOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
+                        _In_ PCFLT_RELATED_OBJECTS FltObjects,
+                        _In_opt_ PVOID CompletionContext,
+                        _In_ FLT_POST_OPERATION_FLAGS Flags);
 
 BOOLEAN
 DoFilterOperation(_In_ PFLT_CALLBACK_DATA Data);
@@ -89,22 +102,15 @@ DoFilterOperation(_In_ PFLT_CALLBACK_DATA Data);
 static CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
     {IRP_MJ_CREATE, 0, PreOperationCallback, PostOperationCallback, 0},
 
-    {IRP_MJ_SET_INFORMATION, 0, PreOperationCallback, PostOperationCallback, 0},
+    {IRP_MJ_SET_INFORMATION, 0, PreOperationCallback, NoPostOperationCallback,
+     0},
 
-    {IRP_MJ_SET_SECURITY, 0, PreOperationCallback, PostOperationCallback, 0},
+    {IRP_MJ_SET_SECURITY, 0, PreOperationCallback, NoPostOperationCallback, 0},
 
-    {IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION, 0, PreOperationCallback,
-     PostOperationCallback, 0},
+    {IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION, 0, PreOperationCallback, NULL,
+     0},
 
-    {IRP_MJ_WRITE, FLTFL_OPERATION_REGISTRATION_SKIP_PAGING_IO,
-     PreOperationCallback, PostOperationCallback, 0},
-
-    {IRP_MJ_READ, FLTFL_OPERATION_REGISTRATION_SKIP_PAGING_IO,
-     PreOperationCallback, PostOperationCallback, 0},
-
-    {IRP_MJ_CLEANUP, 0, PreOperationCallback, PostOperationCallback, 0},
-
-    {IRP_MJ_CLOSE, 0, PreOperationCallback, PostOperationCallback, 0},
+    {IRP_MJ_CLEANUP, 0, PreOperationCallback, NoPostOperationCallback, 0},
 
     {IRP_MJ_OPERATION_END, 0, 0, 0, 0},
 };
@@ -227,8 +233,6 @@ static NTSTATUS GetRequestorUserToken(_In_ PFLT_CALLBACK_DATA Data,
     token = PsReferenceImpersonationToken(PsGetCurrentThread(), &copyOnOpen,
                                           &effectiveOnly, &impersonationLevel);
     if (!token) {
-        DBG_PRINT(DBG_WARN, ("DriverFilter!GetRequestorUserToken "
-                             "PsReferenceImpersonationToken failed"));
         reqProc = FltGetRequestorProcess(Data);
         if (!reqProc) {
             DBG_PRINT(DBG_WARN, ("DriverFilter!GetRequestorUserToken "
@@ -274,10 +278,10 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
     PFLT_FILE_NAME_INFORMATION nameInfo;
     PTOKEN_USER tokenUser;
     PSID sid;
-    UNICODE_STRING sidStr;
+    PPRE_CTX ctx;
+    ULONG sidLen;
 
     UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(CompletionContext);
 
     DBG_PRINT(DBG_TRACE_ROUTINES,
               ("DriverFilter!PreOperationCallback Entered\n"));
@@ -303,17 +307,15 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
         return FLT_PREOP_SUCCESS_WITH_CALLBACK;
     }
 
-    status = RtlConvertSidToUnicodeString(&sidStr, tokenUser->User.Sid, TRUE);
-    if (NT_SUCCESS(status)) {
-        DBG_PRINT(DBG_DEBUG,
-                  ("DriverFilter!PreOperationCallback: Requestor SID: %wZ\n",
-                   &sidStr));
+    sidLen = RtlLengthSid(sid);
 
-        RtlFreeUnicodeString(&sidStr);
-    } else {
-        DBG_PRINT(DBG_DEBUG, ("DriverFilter!PreOperationCallback: "
-                              "RtlConvertSidToUnicodeString failed: 0x%X\n",
-                              status));
+    ctx = (PPRE_CTX)ExAllocatePoolWithTag(NonPagedPoolNx,
+                                          sizeof(PRE_CTX) + sidLen, 'DISP');
+    if (ctx) {
+        PSID sidCopy = ctx + 1;
+        RtlCopySid(sidLen, sidCopy, sid);
+        ctx->UserSid = sidCopy;
+        *CompletionContext = ctx;
     }
 
     status = FltGetFileNameInformation(
@@ -346,7 +348,7 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
                    status));
     }
 
-    status = FltRequestOperationStatusCallback(Data, OperationStatucCallback,
+    status = FltRequestOperationStatusCallback(Data, OperationStatusCallback,
                                                (PVOID)(++OperationStatusCtx));
     if (!NT_SUCCESS(status)) {
         DBG_PRINT(DBG_TRACE_STATUS,
@@ -359,7 +361,7 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
     return FLT_PREOP_SUCCESS_WITH_CALLBACK;
 }
 
-VOID OperationStatucCallback(_In_ PCFLT_RELATED_OBJECTS FltObjects,
+VOID OperationStatusCallback(_In_ PCFLT_RELATED_OBJECTS FltObjects,
                              _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
                              _In_ NTSTATUS OperationStatus,
                              _In_ PVOID RequesterContext) {
@@ -378,34 +380,51 @@ VOID OperationStatucCallback(_In_ PCFLT_RELATED_OBJECTS FltObjects,
 }
 
 FLT_POSTOP_CALLBACK_STATUS
-PostOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
-                      _In_ PCFLT_RELATED_OBJECTS FltObjects,
-                      _In_opt_ PVOID CompletionContext,
-                      _In_ FLT_POST_OPERATION_FLAGS Flags) {
+NoPostOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
+                        _In_ PCFLT_RELATED_OBJECTS FltObjects,
+                        _In_opt_ PVOID CompletionContext,
+                        _In_ FLT_POST_OPERATION_FLAGS Flags) {
     UNREFERENCED_PARAMETER(Data);
     UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(CompletionContext);
     UNREFERENCED_PARAMETER(Flags);
 
-    DBG_PRINT(DBG_TRACE_ROUTINES,
-              ("DriverFilter!PostOperationCallback: Entered\n"));
+    if (CompletionContext) {
+        ExFreePool(CompletionContext);
+    }
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
-FLT_PREOP_CALLBACK_STATUS
-PreOperationNoPostOperationCallback(
-    _Inout_ PFLT_CALLBACK_DATA Data, _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext) {
-    UNREFERENCED_PARAMETER(Data);
+FLT_POSTOP_CALLBACK_STATUS
+PostOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
+                      _In_ PCFLT_RELATED_OBJECTS FltObjects,
+                      _In_opt_ PVOID CompletionContext,
+                      _In_ FLT_POST_OPERATION_FLAGS Flags) {
+    UNICODE_STRING sidStr;
+    PPRE_CTX ctx = CompletionContext;
+
+    UNREFERENCED_PARAMETER(Flags);
     UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(CompletionContext);
+    UNREFERENCED_PARAMETER(Data);
 
     DBG_PRINT(DBG_TRACE_ROUTINES,
-              ("DriverFilter!PreOperationNoPostOperationerCallback: "
-               "Entered\n"));
+              ("DriverFilter!PostOperationCallback: Entered\n"));
+    if (ctx && ctx->UserSid) {
+        status = RtlConvertSidToUnicodeString(&sidStr, ctx->UserSid, TRUE);
+        if (NT_SUCCESS(status)) {
+            DBG_PRINT(
+                DBG_DEBUG,
+                ("DriverFilter!PostOperationCallback: Requestor SID: %wZ\n",
+                 &sidStr));
+            RtlFreeUnicodeString(&sidStr);
+        } else {
+            DBG_PRINT(DBG_ERROR, ("DriverFilter!PostOperationCallback: "
+                                  "RtlConvertSidToUnicodeString failed: 0x%X\n",
+                                  status));
+        }
+    }
 
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
 BOOLEAN
