@@ -1,0 +1,28 @@
+CompileFlags:
+  Add:
+    - --driver-mode=cl
+    - -std:c++latest
+    - -Wall
+    - -Wno-c++98-compat
+    - -Wno-c++98-compat-pedantic
+    - -Wno-unused-macros
+    - -Wno-switch-default
+    - -Wno-exit-time-destructors
+    - -Wno-global-constructors
+    - -Wno-unsafe-buffer-usage
+    - -Wno-unused-const-variable
+    - -Wno-cast-function-type-strict
+    - -Wno-nonportable-include-path
+    - -Wno-reserved-identifier
+    - -Wno-cast-function-type-mismatch
+    - -Wno-missing-field-initializers
+    - -Wno-unknown-pragmas
+    - -Wno-switch-enum
+
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*, modernize-*, performance-*]
+    Remove: [modernize-use-trailing-return-type, bugprone-easily-swappable-parameters, bugprone-reserved-identifier, performance-no-int-to-ptr]
+    FastCheckFilter: Loose
+  UnusedIncludes: None
+  MissingIncludes: None

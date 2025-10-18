@@ -1,0 +1,135 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = "ActivityMonitor"
+ClassGuid   = {b86dff51-a31e-4bac-b3cf-e8cfe75c9fc2}
+Provider    = %ProviderString%
+DriverVer   = 09/29/2024,0.0.0.1
+CatalogFile = DriverFilter.cat
+PnpLockdown = 1
+
+[SourceDisksFiles]
+DriverFilter.sys = 1,,
+; DriverFilter.exe = 1,,
+
+[SourceDisksNames]
+1 = %DiskId1%,,,
+
+[DestinationDirs]
+DriverFilterDownlevel.CopyDriverFiles = 12            ;%windir%\system32\drivers
+DriverFilterDownlevel.DelDriverFiles  = 12            ;%windir%\system32\drivers
+DriverFilter.Files                    = 13            ;driver store
+
+;;
+;; Default install sections
+;;
+
+[DefaultInstall.NT$ARCH$.10.0...25952]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = DriverFilter.Files,
+
+[DefaultInstall.NT$ARCH$.10.0...25952.Services]
+AddService          = %ServiceName%,,DriverFilter.Service
+
+;
+; Support sections
+;
+
+[DriverFilter.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %13%\%DriverName%.sys        ;%windir%\system32\drivers\
+Dependencies     = FltMgr
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = DriverFilter.AddRegistry
+
+[DriverFilter.AddRegistry]
+HKR,"Parameters","SupportedFeatures",0x00010001,0x3
+HKR,"Parameters\Instances","DefaultInstance",0x00000000,%DefaultInstance%
+;HKR,"Parameters\Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+;HKR,"Parameters\Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+;HKR,"Parameters\Instances\"%Instance2.Name%,"Altitude",0x00000000,%Instance2.Altitude%
+;HKR,"Parameters\Instances\"%Instance2.Name%,"Flags",0x00010001,%Instance2.Flags%
+HKR,"Parameters\Instances\"%Instance3.Name%,"Altitude",0x00000000,%Instance3.Altitude%
+HKR,"Parameters\Instances\"%Instance3.Name%,"Flags",0x00010001,%Instance3.Flags%
+
+[DriverFilter.Files]
+%DriverName%.sys
+
+;;
+;; Downlevel default install sections
+;;
+
+[DefaultInstall.NT$ARCH$]
+OptionDesc          = %ServiceDescription%
+CopyFiles           = DriverFilterDownlevel.CopyDriverFiles
+
+[DefaultInstall.NT$ARCH$.Services]
+AddService          = %ServiceName%,,DriverFilterDownlevel.Service
+
+;;
+;; Downlevel default uninstall sections
+;;
+
+[DefaultUninstall.NT$ARCH$]
+LegacyUninstall = 1
+DelFiles        = DriverFilterDownlevel.DelDriverFiles
+
+[DefaultUninstall.NT$ARCH$.Services]
+DelService      = %ServiceName%,0x200      ;Ensure service is stopped before deleting
+
+;
+; Downlevel support sections
+;
+
+[DriverFilterDownlevel.Service]
+DisplayName      = %ServiceName%
+Description      = %ServiceDescription%
+ServiceBinary    = %12%\%DriverName%.sys        ;%windir%\system32\drivers\
+Dependencies     = FltMgr
+ServiceType      = 2                            ;SERVICE_FILE_SYSTEM_DRIVER
+StartType        = 3                            ;SERVICE_DEMAND_START
+ErrorControl     = 1                            ;SERVICE_ERROR_NORMAL
+LoadOrderGroup   = "FSFilter Activity Monitor"
+AddReg           = DriverFilterDownlevel.AddRegistry
+
+[DriverFilterDownlevel.AddRegistry]
+HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,"Instances","DefaultInstance",0x00000000,%DefaultInstance%
+;HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
+;HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
+;HKR,"Instances\"%Instance2.Name%,"Altitude",0x00000000,%Instance2.Altitude%
+;HKR,"Instances\"%Instance2.Name%,"Flags",0x00010001,%Instance2.Flags%
+HKR,"Instances\"%Instance3.Name%,"Altitude",0x00000000,%Instance3.Altitude%
+HKR,"Instances\"%Instance3.Name%,"Flags",0x00010001,%Instance3.Flags%
+
+[DriverFilterDownlevel.CopyDriverFiles]
+%DriverName%.sys
+
+[DriverFilterDownlevel.DelDriverFiles]
+%DriverName%.sys
+
+;;
+;; String Section
+;;
+
+[Strings]
+ProviderString          = "SergeyBryanksiy"
+ServiceDescription      = "Access manager driver"
+ServiceName             = "DriverFilter"
+DriverName              = "DriverFilter"
+DiskId1                 = "DriverFilter Device Installation Disk"
+
+;Instances specific information.
+DefaultInstance         = "DriverFilter - Top Instance"
+;Instance1.Name          = "DriverFilter - Middle Instance"
+;Instance1.Altitude      = "370000"
+;Instance1.Flags         = 0x1          ; Suppress automatic attachments
+;Instance2.Name          = "DriverFilter - Bottom Instance"
+;Instance2.Altitude      = "361000"
+;Instance2.Flags         = 0x1          ; Suppress automatic attachments
+Instance3.Name          = "DriverFilter - Top Instance"
+Instance3.Altitude      = "385100"
+Instance3.Flags         = 0x0
