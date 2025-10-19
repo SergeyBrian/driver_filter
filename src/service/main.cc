@@ -1,7 +1,11 @@
-#include "service/pipe.h"
+#include "service/database.h"
+#include "utils/defer.h"
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
+
+#include "common/dacl/internal.h"
+#include "service/pipe.h"
 
 static SERVICE_STATUS g_ServiceStatus{};
 static SERVICE_STATUS_HANDLE g_StatusHandle{};
@@ -17,14 +21,21 @@ static void WINAPI ServiceCtrlHandler(DWORD ctrlCode) {
 }
 
 static void WINAPI ServiceMain(DWORD /* argc */, LPWSTR * /*argv */) {
-    g_StatusHandle =
-        RegisterServiceCtrlHandlerW(ServiceName, ServiceCtrlHandler);
+    g_StatusHandle = RegisterServiceCtrlHandlerW(
+        dacl::proto::internal::ServiceName, ServiceCtrlHandler);
     if (!g_StatusHandle) return;
 
     g_ServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
     g_ServiceStatus.dwCurrentState = SERVICE_START_PENDING;
     g_ServiceStatus.dwControlsAccepted = SERVICE_ACCEPT_STOP;
     SetServiceStatus(g_StatusHandle, &g_ServiceStatus);
+
+    if (!database::Connect()) {
+        g_ServiceStatus.dwCurrentState = SERVICE_STOPPED;
+        SetServiceStatus(g_StatusHandle, &g_ServiceStatus);
+        return;
+    }
+    defer { database::Disconnect(); };
 
     g_StopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
 
@@ -45,7 +56,7 @@ static void WINAPI ServiceMain(DWORD /* argc */, LPWSTR * /*argv */) {
 
 int wmain() {
     SERVICE_TABLE_ENTRYW ServiceTable[] = {
-        {const_cast<LPWSTR>(ServiceName),
+        {const_cast<LPWSTR>(dacl::proto::internal::ServiceName),
          reinterpret_cast<LPSERVICE_MAIN_FUNCTIONW>(ServiceMain)},
         {nullptr, nullptr},
     };

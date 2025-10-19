@@ -1,0 +1,11 @@
+#ifndef H_SRC_SERVICE_DATABASE_H
+#define H_SRC_SERVICE_DATABASE_H
+
+#include "common/dacl/dacl.h"
+namespace database {
+bool Connect();
+void Disconnect();
+bool InsertRule(const dacl::Rule &rule);
+}  // namespace database
+
+#endif  // H_SRC_SERVICE_DATABASE_H

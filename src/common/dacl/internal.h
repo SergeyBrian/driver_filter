@@ -4,11 +4,15 @@
 #include "common/dacl/dacl.h"
 
 namespace dacl::proto::internal {
+constexpr const wchar_t *ServiceName = L"DriverFilterSvc";
 constexpr const wchar_t *PipeName = L"\\\\.\\pipe\\DriverFilterConfigPipe";
 
 constexpr const char *PingMessage = "ping";
 constexpr const char *PongMessage = "pong";
 constexpr const char *SetMessage = "set";
+
+constexpr const char *RespOk = "ok";
+constexpr const char *RespError = "error";
 
 constexpr const char *RespUnknownRequest = "unknown_req";
 

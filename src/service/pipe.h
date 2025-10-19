@@ -3,8 +3,6 @@
 
 using HANDLE = void *;
 
-constexpr const wchar_t *ServiceName = L"DriverFilterSvc";
-
 namespace pipe {
 HANDLE StartWorker(HANDLE stop_event);
 }

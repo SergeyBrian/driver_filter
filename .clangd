@@ -29,7 +29,7 @@ CompileFlags:
 Diagnostics:
   ClangTidy:
     Add: [bugprone-*, modernize-*, performance-*]
-    Remove: [modernize-use-trailing-return-type, bugprone-easily-swappable-parameters, bugprone-reserved-identifier, performance-no-int-to-ptr]
+    Remove: [modernize-use-trailing-return-type, bugprone-easily-swappable-parameters, bugprone-reserved-identifier, performance-no-int-to-ptr, modernize-avoid-c-arrays]
     FastCheckFilter: Loose
   UnusedIncludes: None
   MissingIncludes: None

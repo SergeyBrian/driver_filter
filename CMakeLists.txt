@@ -28,6 +28,7 @@ set(USER_SRC
 set(SERVICE_SRC
     src/service/main.cc
     src/service/pipe.cc
+    src/service/database.cc
 )
 
 set(
@@ -51,10 +52,11 @@ target_include_directories(sqlite3 PUBLIC
   ${sqlite3_SOURCE_DIR}
 )
 
-add_executable(DriverFilterService ${SERVICE_SRC} ${UTILS_SRC} ${DACL_SRC})
+add_executable(DriverFilterService ${SERVICE_SRC} ${UTILS_SRC})
+target_link_libraries(DriverFilterService dacl sqlite3)
 
-add_executable(DriverFilterController ${USER_SRC} ${UTILS_SRC} ${DACL_SRC})
-target_link_libraries(DriverFilterController dacl sqlite3)
+add_executable(DriverFilterController ${USER_SRC} ${UTILS_SRC})
+target_link_libraries(DriverFilterController dacl)
 
 wdk_add_driver(DriverFilter ${DRIVER_SRC})
 target_link_libraries(DriverFilter WDK::FLTMGR)

@@ -66,6 +66,7 @@ bool Set(const dacl::Rule &rule) {
 
     DWORD written{};
     WriteFile(pipe, buf, DWORD(len), &written, nullptr);
+    std::memset(buf, 0, sizeof(buf));
     DWORD read{};
     if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {
         logger::Error("ReadFile failed");

@@ -1,46 +1,23 @@
 #include "pipe.h"
-#include <format>
-#include "common/dacl/dacl.h"
-#include "common/dacl/internal.h"
-#include "utils/alias.h"
+#include "service/database.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <sddl.h>
 #include <iostream>
+#include <format>
 
 #include "common/dacl/proto.h"
+#include "common/dacl/dacl.h"
+#include "common/dacl/internal.h"
+#include "utils/alias.h"
 #include "utils/defer.h"
+#include "log.h"
 
 namespace internal = dacl::proto::internal;
 
 namespace pipe {
-static void logA(const char *fmt, ...) {
-    char buf[1024];
-    va_list ap;
-    va_start(ap, fmt);
-    _vsnprintf_s(buf, _TRUNCATE, fmt, ap);
-    va_end(ap);
-
-    HANDLE hEvent = RegisterEventSourceA(nullptr, ServiceName);
-    if (hEvent) {
-        LPCSTR msgs[1] = {buf};
-        WORD type = EVENTLOG_INFORMATION_TYPE;
-        if (strncmp(buf, "[ERR", 4) == 0)
-            type = EVENTLOG_ERROR_TYPE;
-        else if (strncmp(buf, "[WARN", 5) == 0)
-            type = EVENTLOG_WARNING_TYPE;
-
-        ReportEventA(hEvent, type, 0, 0, nullptr, 1, 0, msgs, nullptr);
-
-        DeregisterEventSource(hEvent);
-    } else {
-        OutputDebugStringA(buf);
-        OutputDebugStringA("\r\n");
-    }
-}
-
 static void ProcessRequest(const HANDLE pipe) {
     char buf[512] = {};
     DWORD bytesRead = 0;
@@ -52,7 +29,6 @@ static void ProcessRequest(const HANDLE pipe) {
     logA("[svc] got '%s' (%lu bytes)", buf, bytesRead);
 
     const char *resp{};
-    std::string response{};
 
     logA("[svc] Received: %s", buf);
     if (strcmp(buf, internal::PingMessage) == 0) {
@@ -62,10 +38,12 @@ static void ProcessRequest(const HANDLE pipe) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::SetMessage) + 1);
 
-        response = std::format("ok (type: {} mask: {} user: {} path: {})",
-                               int(rule.type), int(rule.access_mask), rule.user,
-                               rule.path);
-        resp = response.c_str();
+        if (database::InsertRule(rule)) {
+            resp = internal::RespOk;
+        } else {
+            resp = internal::RespError;
+        }
+
     } else {
         resp = internal::RespUnknownRequest;
     }
