@@ -66,7 +66,8 @@ bool Connect() {
 
     char *err{};
     constexpr const char *init_q = R"(CREATE TABLE IF NOT EXISTS rules(
-                path TEXT PRIMARY KEY,
+                id INTEGER PRIMARY KEY,
+                path TEXT,
                 user TEXT,
                 type INTEGER,
                 access_mask INTEGER
@@ -112,5 +113,97 @@ bool InsertRule(const dacl::Rule &rule) {
     logA("[DEBUG] InsertRule success");
 
     return true;
+}
+
+bool DeleteRule(const std::string &path) {
+    if (path.empty()) {
+        logA("[ERROR] Can't delete empty path");
+        return false;
+    }
+
+    if (db == nullptr) {
+        logA("[ERROR] Database not connected");
+        return false;
+    }
+
+    constexpr const char *q = "DELETE FROM rules WHERE path = ?";
+
+    sqlite3_stmt *stmt{};
+    if (sqlite3_prepare_v2(db, q, -1, &stmt, nullptr)) {
+        logA("[ERROR] DeleteRule failed: can't prepare");
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, path.c_str(), -1, nullptr);
+
+    if (sqlite3_step(stmt) != SQLITE_DONE) {
+        logA("[ERROR] DeleteRule failed: cant delete (%s)", sqlite3_errmsg(db));
+        return false;
+    }
+
+    sqlite3_finalize(stmt);
+
+    logA("[DEBUG] DeleteRule success");
+
+    return true;
+}
+
+std::vector<dacl::Rule> GetRules() {
+    std::vector<dacl::Rule> res;
+
+    if (db == nullptr) {
+        logA("[ERROR] Database not connected");
+        return res;
+    }
+
+    constexpr const char *q =
+        "SELECT id, path, user, type, access_mask FROM rules ORDER BY id;";
+
+    sqlite3_stmt *stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db, q, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        logA("[ERROR] GetRules prepare failed: %s", sqlite3_errmsg(db));
+        return res;
+    }
+
+    res.reserve(32);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        dacl::Rule r{};
+
+        {
+            int v = sqlite3_column_int(stmt, 0);
+            r.id = v;
+        }
+
+        {
+            const unsigned char *p = sqlite3_column_text(stmt, 1);
+            int n = sqlite3_column_bytes(stmt, 1);
+            r.path.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+        }
+
+        {
+            const unsigned char *p = sqlite3_column_text(stmt, 2);
+            int n = sqlite3_column_bytes(stmt, 2);
+            r.user.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+        }
+
+        {
+            int v = sqlite3_column_int(stmt, 3);
+            r.type = dacl::Rule::Type(v);
+        }
+
+        r.access_mask = u8(sqlite3_column_int(stmt, 4));
+
+        res.push_back(std::move(r));
+    }
+
+    if (rc != SQLITE_DONE) {
+        logA("[ERROR] GetRules step failed: %s", sqlite3_errmsg(db));
+    }
+    logA("[DEBUG] GetRules selected %d rules", res.size());
+
+    sqlite3_finalize(stmt);
+    return res;
 }
 }  // namespace database

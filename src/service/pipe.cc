@@ -1,16 +1,18 @@
 #include "pipe.h"
-#include "service/database.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 #include <sddl.h>
+
 #include <iostream>
 #include <format>
+#include <algorithm>
 
 #include "common/dacl/proto.h"
 #include "common/dacl/dacl.h"
 #include "common/dacl/internal.h"
+#include "service/database.h"
 #include "utils/alias.h"
 #include "utils/defer.h"
 #include "log.h"
@@ -44,6 +46,58 @@ static void ProcessRequest(const HANDLE pipe) {
             resp = internal::RespError;
         }
 
+    } else if (strncmp(buf, internal::DelMessage,
+                       strlen(internal::DelMessage)) == 0) {
+        std::string path =
+            internal::DecodeDelRule(buf + strlen(internal::DelMessage) + 1);
+
+        if (database::DeleteRule(path)) {
+            resp = internal::RespOk;
+        } else {
+            resp = internal::RespError;
+        }
+    } else if (strncmp(buf, internal::GetRulesMessage,
+                       strlen(internal::GetRulesMessage)) == 0) {
+        auto rules = database::GetRules();
+        char *tmp_buf = new char[512 * (1 + rules.size())];
+        defer { delete[] tmp_buf; };
+        char *ptr = tmp_buf;
+
+        usize used_len{};
+
+        usize full_size{};
+        ptr += sizeof(full_size);
+
+        for (const auto &rule : rules) {
+            dacl::proto::internal::EncodeRule(rule, ptr, &used_len, false);
+            ptr += used_len;
+            logA("[DEBUG] used_len = %d", used_len);
+        }
+
+        full_size = usize(ptr - tmp_buf);
+        ptr = tmp_buf;
+
+        logA("[DEBUG] full_size = %d", full_size);
+
+        *reinterpret_cast<usize *>(ptr) = full_size;
+
+        DWORD sent_size{};
+        while (sent_size < full_size) {
+            DWORD written{};
+
+            if (!WriteFile(pipe, ptr,
+                           DWORD(std::min(sizeof(buf), full_size - sent_size)),
+                           &written, nullptr)) {
+                logA("[svc] WriteFile() failed: %lu", resp, GetLastError());
+            }
+            sent_size += written;
+        }
+
+        if (!FlushFileBuffers(pipe)) {
+            logA("[svc] FlushFileBuffers failed: %lu", GetLastError());
+        }
+
+        return;
     } else {
         resp = internal::RespUnknownRequest;
     }

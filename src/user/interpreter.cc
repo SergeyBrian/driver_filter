@@ -17,8 +17,9 @@ static void PrintHelp() {
     std::println("\nAvailable commands:");
 
     std::println("\tset {{allow|deny}} <permissions> <path> <user>");
-    std::println("\tlist {{users}}");
+    std::println("\tlist {{users|rules}}");
     std::println("\tstatus");
+    std::println("\tdelete <id>");
 
     std::println("\nAvailable permissions:");
     std::println("\tall");
@@ -54,6 +55,17 @@ static bool HandleList(std::stack<std::string_view> &args) {
         std::vector<dacl::user::User> users = dacl::user::List();
         for (const auto &user : users) {
             std::println("{}:\t{}", user.name, user.sid);
+        }
+    } else if (target == "rules") {
+        std::vector<dacl::Rule> rules = dacl::proto::GetRules();
+        std::println("Active rules:");
+
+        std::print("{:<4}  {:<30}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
+                   "User", "Type", "Mask");
+
+        for (const auto &r : rules) {
+            std::print("{:<4}  {:<30}  {:<20}  {:<6}  0x{:08X}\n", r.id, r.path,
+                       r.user, static_cast<int>(r.type), r.access_mask);
         }
     } else {
         logger::Error("Unknown list target `{}`", target);

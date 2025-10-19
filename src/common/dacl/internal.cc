@@ -1,15 +1,41 @@
 #include "internal.h"
 
 namespace dacl::proto::internal {
-bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len) {
+bool EncodeDelRule(const std::string &path, void *buf, usize *result_len) {
     if (!buf) {
         return false;
     }
 
     auto ptr = reinterpret_cast<char *>(buf);
-    /*auto msg_size = reinterpret_cast<usize *>(buf);*/
-    /*void *ptr = msg_size + 1;*/
     {
+        usize del_msg_size = strlen(internal::DelMessage);
+        memcpy(ptr, internal::DelMessage, del_msg_size + 1);
+        ptr = reinterpret_cast<char *>(ptr) + del_msg_size + 1;
+    }
+    usize size = path.size() + 1;
+    memcpy(ptr, path.c_str(), size);
+    ptr += size;
+
+    *result_len =
+        usize(reinterpret_cast<char *>(ptr) - reinterpret_cast<char *>(buf));
+
+    return true;
+}
+
+std::string DecodeDelRule(const void *buf) {
+    if (!buf) return {};
+
+    return reinterpret_cast<const char *>(buf);
+}
+
+bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len,
+                bool with_set) {
+    if (!buf) {
+        return false;
+    }
+
+    auto ptr = reinterpret_cast<char *>(buf);
+    if (with_set) {
         usize set_msg_size = strlen(internal::SetMessage);
         memcpy(ptr, internal::SetMessage, set_msg_size + 1);
         ptr = reinterpret_cast<char *>(ptr) + set_msg_size + 1;
@@ -43,7 +69,7 @@ bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len) {
     return true;
 }
 
-dacl::Rule DecodeRule(void *buf) {
+dacl::Rule DecodeRule(const void *buf, usize *used_len) {
     if (!buf) return {};
     auto ptr = reinterpret_cast<const char *>(buf);
 
@@ -60,6 +86,10 @@ dacl::Rule DecodeRule(void *buf) {
 
     rule.user = ptr;
     ptr += rule.user.size() + 1;
+
+    if (used_len != nullptr) {
+        *used_len = usize(ptr - reinterpret_cast<const char *>(buf));
+    }
 
     return rule;
 }

@@ -7,6 +7,7 @@
 namespace dacl {
 
 struct Rule {
+    int id{};
     enum class Type : u8 { Allow, Deny } type;
     enum class Permission : u8 {
         None = 0,
