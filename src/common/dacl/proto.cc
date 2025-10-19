@@ -112,7 +112,6 @@ std::vector<dacl::Rule> GetRules() {
     defer { CloseHandle(pipe); };
 
     auto req = internal::GetRulesMessage;
-    char buf[512]{};
 
     DWORD written{};
     WriteFile(pipe, req, DWORD(strlen(internal::GetRulesMessage)), &written,
@@ -122,40 +121,35 @@ std::vector<dacl::Rule> GetRules() {
 
     std::vector<dacl::Rule> res{};
 
-    if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {
+    usize expected_size{};
+    if (!ReadFile(pipe, &expected_size, sizeof(expected_size), &read,
+                  nullptr)) {
         logger::Error("ReadFile failed");
         return {};
     }
 
+    auto buf = new char[expected_size];
+    defer { delete[] buf; };
+
     DWORD total_read = read;
 
-    auto expected_size = *reinterpret_cast<usize *>(buf);
-
-    logger::Debug("Expecting size: {} (read: {})", expected_size, total_read);
-    auto ptr = reinterpret_cast<const char *>(buf) + sizeof(usize);
-
-    usize used_len{};
-    usize parsed_len = sizeof(usize);
-    while (ptr < buf + sizeof(buf) && parsed_len < expected_size) {
-        logger::Debug("Decode");
-        res.push_back(internal::DecodeRule(ptr, &used_len));
-        ptr += used_len;
-        parsed_len += used_len;
-    }
-
-    while (total_read < expected_size) {
-        if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {
+    auto ptr = buf;
+    do {
+        if (!ReadFile(pipe, ptr, DWORD(expected_size), &read, nullptr)) {
             logger::Error("ReadFile failed");
             return {};
         }
         total_read += read;
+        ptr += read;
+    } while (total_read < expected_size);
 
-        ptr = reinterpret_cast<const char *>(buf);
-        while (ptr < buf + sizeof(buf) && parsed_len < expected_size) {
-            res.push_back(internal::DecodeRule(ptr, &used_len));
-            ptr += used_len;
-            parsed_len += used_len;
-        }
+    ptr = buf;
+    usize parsed_len = sizeof(expected_size);
+    while (ptr < buf + expected_size && parsed_len < expected_size) {
+        usize used_len{};
+        res.push_back(internal::DecodeRule(ptr, &used_len));
+        ptr += used_len;
+        parsed_len += used_len;
     }
 
     return res;
