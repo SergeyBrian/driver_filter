@@ -3,13 +3,25 @@
 #include <dontuse.h>
 #include <suppress.h>
 #include <ntddk.h>
-#include <wdm.h>
+#include <wdmsec.h>
+
+#include "driver.h"
 
 #pragma prefast(disable : __WARNING_ENCODE_MEMBER_FUNCTION_POINTER, \
                 "Not valid for kernel mode drivers")
 
+#define SDDL_DACFLT L"D:P(A;;GA;;;SY)(A;;GA;;;BA)"
+
 static PFLT_FILTER gFilterHandle;
 static NTSTATUS status;
+
+static UNICODE_STRING gDevName =
+    RTL_CONSTANT_STRING(L"\\Device\\DriverFilterControl");
+static UNICODE_STRING gSymName =
+    RTL_CONSTANT_STRING(L"\\??\\DriverFilterControl");
+static PDEVICE_OBJECT gCtlDev;
+
+DRIVER_DISPATCH CtlCreateClose, CtlDeviceControl;
 
 static ULONG_PTR OperationStatusCtx = 1;
 
@@ -120,6 +132,11 @@ NTSTATUS Unload(_In_ FLT_FILTER_UNLOAD_FLAGS Flags) {
     PAGED_CODE()
     DBG_PRINT(DBG_TRACE_ROUTINES, ("DriverFilter!Unload: Entered\n"));
 
+    IoDeleteSymbolicLink(&gSymName);
+    if (gCtlDev) {
+        IoDeleteDevice(gCtlDev);
+    }
+
     FltUnregisterFilter(gFilterHandle);
 
     return STATUS_SUCCESS;
@@ -148,6 +165,8 @@ static CONST FLT_REGISTRATION FilterRegistration = {
 
 NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject,
                      _In_ PUNICODE_STRING RegistryPath) {
+    UNICODE_STRING sddl;
+
     UNREFERENCED_PARAMETER(RegistryPath);
 
     DBG_PRINT(DBG_TRACE_ROUTINES, ("DriverFilter!DriverEntry Entered\n"));
@@ -165,6 +184,33 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject,
         FltUnregisterFilter(gFilterHandle);
     }
 
+    // ==== IOCTL ====
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = CtlCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = CtlCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = CtlDeviceControl;
+
+    RtlInitUnicodeString(&sddl, SDDL_DACFLT);
+    status = IoCreateDeviceSecure(DriverObject, 0, &gDevName,
+                                  FILE_DEVICE_UNKNOWN, FILE_DEVICE_SECURE_OPEN,
+                                  FALSE, &sddl, NULL, &gCtlDev);
+    if (!NT_SUCCESS(status)) goto Fail;
+
+    status = IoCreateSymbolicLink(&gSymName, &gDevName);
+    if (!NT_SUCCESS(status)) goto Fail;
+
+    gCtlDev->Flags |= DO_BUFFERED_IO;
+
+    gCtlDev->Flags &= ~DO_DEVICE_INITIALIZING;
+
+    return STATUS_SUCCESS;
+
+Fail:
+    if (gCtlDev) {
+        IoDeleteDevice(gCtlDev);
+        gCtlDev = NULL;
+    }
+    IoDeleteSymbolicLink(&gSymName);
+    if (gFilterHandle) FltUnregisterFilter(gFilterHandle);
     return status;
 }
 
@@ -270,6 +316,47 @@ static NTSTATUS GetRequestorUserToken(_In_ PFLT_CALLBACK_DATA Data,
 }
 
 // Callbacks
+
+#define IOCTL_TEST \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
+
+NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
+    PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(Irp);
+    ULONG code = sp->Parameters.DeviceIoControl.IoControlCode;
+    NTSTATUS st = STATUS_INVALID_DEVICE_REQUEST;
+    PVOID buf = Irp->AssociatedIrp.SystemBuffer;
+    ULONG inLen = sp->Parameters.DeviceIoControl.InputBufferLength;
+    ULONG outLen = sp->Parameters.DeviceIoControl.OutputBufferLength;
+
+    UNREFERENCED_PARAMETER(DevObj);
+    DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl: Entered\n"));
+
+    switch (code) {
+        case IOCTL_TEST:
+            DBG_PRINT(DBG_DEBUG,
+                      ("DriverFilter!CtlDeviceControl Received test '%s'",
+                       (char *)buf));
+            Irp->IoStatus.Information = 0;
+            st = STATUS_SUCCESS;
+            break;
+        default:
+            st = STATUS_INVALID_DEVICE_REQUEST;
+            Irp->IoStatus.Information = 0;
+            break;
+    }
+
+    Irp->IoStatus.Status = st;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return st;
+}
+
+NTSTATUS CtlCreateClose(PDEVICE_OBJECT DevObj, PIRP Irp) {
+    UNREFERENCED_PARAMETER(DevObj);
+    Irp->IoStatus.Information = 0;
+    Irp->IoStatus.Status = STATUS_SUCCESS;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
+    return STATUS_SUCCESS;
+}
 
 FLT_PREOP_CALLBACK_STATUS
 PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
