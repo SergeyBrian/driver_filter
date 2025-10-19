@@ -64,21 +64,21 @@ target_link_libraries(DriverFilter WDK::FLTMGR)
 add_library(dacl STATIC ${DACL_SRC})
 
 add_custom_command(
-        TARGET DriverFilter PRE_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_LIST_DIR}/src/driver_filter.inf ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf
+      TARGET DriverFilter PRE_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_LIST_DIR}/src/driver_filter.inf ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf
 )
 
 add_custom_command(
-        TARGET DriverFilter POST_BUILD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        COMMAND stampinf.exe -f DriverFilter.inf
+      TARGET DriverFilter POST_BUILD
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMAND stampinf.exe -f DriverFilter.inf
 )
 
 add_custom_command(
-        TARGET DriverFilter POST_BUILD
-        WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.sys C:/Users/sbski/share
-        COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf C:/Users/sbski/share
+      TARGET DriverFilter POST_BUILD
+      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.sys C:/Users/sbski/share
+      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf C:/Users/sbski/share
 )
 
 set_target_properties(DriverFilter PROPERTIES OUTPUT_NAME "DriverFilter")

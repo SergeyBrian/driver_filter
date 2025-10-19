@@ -48,10 +48,10 @@ static void ProcessRequest(const HANDLE pipe) {
 
     } else if (strncmp(buf, internal::DelMessage,
                        strlen(internal::DelMessage)) == 0) {
-        std::string path =
-            internal::DecodeDelRule(buf + strlen(internal::DelMessage) + 1);
+        dacl::Rule rule =
+            internal::DecodeRule(buf + strlen(internal::DelMessage) + 1);
 
-        if (database::DeleteRule(path)) {
+        if (database::DeleteRule(rule)) {
             resp = internal::RespOk;
         } else {
             resp = internal::RespError;
@@ -69,7 +69,7 @@ static void ProcessRequest(const HANDLE pipe) {
         ptr += sizeof(full_size);
 
         for (const auto &rule : rules) {
-            dacl::proto::internal::EncodeRule(rule, ptr, &used_len, false);
+            dacl::proto::internal::EncodeRule(rule, ptr, &used_len);
             ptr += used_len;
             logA("[DEBUG] used_len = %d", used_len);
         }

@@ -1,4 +1,5 @@
 #include "database.h"
+#include "common/dacl/dacl.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -115,18 +116,13 @@ bool InsertRule(const dacl::Rule &rule) {
     return true;
 }
 
-bool DeleteRule(const std::string &path) {
-    if (path.empty()) {
-        logA("[ERROR] Can't delete empty path");
-        return false;
-    }
-
+bool DeleteRule(const dacl::Rule &rule) {
     if (db == nullptr) {
         logA("[ERROR] Database not connected");
         return false;
     }
 
-    constexpr const char *q = "DELETE FROM rules WHERE path = ?";
+    constexpr const char *q = "DELETE FROM rules WHERE id = ?";
 
     sqlite3_stmt *stmt{};
     if (sqlite3_prepare_v2(db, q, -1, &stmt, nullptr)) {
@@ -134,7 +130,7 @@ bool DeleteRule(const std::string &path) {
         return false;
     }
 
-    sqlite3_bind_text(stmt, 1, path.c_str(), -1, nullptr);
+    sqlite3_bind_int(stmt, 1, rule.id);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         logA("[ERROR] DeleteRule failed: cant delete (%s)", sqlite3_errmsg(db));

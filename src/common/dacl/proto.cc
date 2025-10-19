@@ -1,4 +1,5 @@
 #include "proto.h"
+#include <string.h>
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -59,7 +60,11 @@ bool Set(const dacl::Rule &rule) {
 
     usize len{};
     char buf[512]{};
-    if (!internal::EncodeRule(rule, buf, &len)) {
+
+    usize set_msg_size = strlen(internal::SetMessage) + 1;
+    std::memcpy(buf, internal::SetMessage, set_msg_size);
+
+    if (!internal::EncodeRule(rule, buf + set_msg_size, &len)) {
         logger::Error("Failed to encode rule");
         return false;
     }
@@ -77,7 +82,7 @@ bool Set(const dacl::Rule &rule) {
     return true;
 }
 
-bool Del(const std::string &path) {
+bool Del(const dacl::Rule &rule) {
     HANDLE pipe = Connect();
     if (!pipe) {
         return false;
@@ -86,7 +91,11 @@ bool Del(const std::string &path) {
 
     usize len{};
     char buf[512]{};
-    if (!internal::EncodeDelRule(path, buf, &len)) {
+
+    usize del_msg_size = strlen(internal::DelMessage) + 1;
+    std::memcpy(buf, internal::DelMessage, del_msg_size);
+
+    if (!internal::EncodeRule(rule, buf + del_msg_size, &len)) {
         logger::Error("Failed to encode delete rule");
         return false;
     }

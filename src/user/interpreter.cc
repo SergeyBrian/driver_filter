@@ -33,12 +33,14 @@ enum class Command : u8 {
     Set,
     List,
     Status,
+    Delete,
 };
 
 static Command ParseCommand(std::string_view s) {
     if (s == "set") return Command::Set;
     if (s == "list") return Command::List;
     if (s == "status") return Command::Status;
+    if (s == "delete") return Command::Delete;
     return Command::Invalid;
 }
 
@@ -148,6 +150,27 @@ static bool HandleSet(std::stack<std::string_view> &args) {
     return dacl::proto::Set(rule);
 }
 
+static bool HandleDelete(std::stack<std::string_view> &args) {
+    if (args.empty()) {
+        logger::Error("Not enough arguments");
+        PrintHelp();
+        return false;
+    }
+
+    auto idStr = args.top();
+    int id{};
+    auto [_, ec] =
+        std::from_chars(idStr.data(), idStr.data() + idStr.size(), id);
+    if (ec != std::errc{}) {
+        logger::Error("Can't parse `{}` as id", idStr);
+        return false;
+    }
+
+    dacl::proto::Del({.id = id});
+
+    return true;
+}
+
 bool Process(std::stack<std::string_view> args) {
     if (args.empty()) {
         PrintHelp();
@@ -171,6 +194,8 @@ bool Process(std::stack<std::string_view> args) {
             return HandleList(args);
         case Command::Status:
             return HandleStatus();
+        case Command::Delete:
+            return HandleDelete(args);
         default:
             std::unreachable();
     }

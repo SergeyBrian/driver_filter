@@ -6,7 +6,7 @@ namespace database {
 bool Connect();
 void Disconnect();
 bool InsertRule(const dacl::Rule &rule);
-bool DeleteRule(const std::string &path);
+bool DeleteRule(const dacl::Rule &path);
 std::vector<dacl::Rule> GetRules();
 }  // namespace database
 

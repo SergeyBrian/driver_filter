@@ -11,7 +11,7 @@ struct Status {
 
 std::optional<Status> GetStatus();
 bool Set(const dacl::Rule &rule);
-bool Del(const std::string &path);
+bool Del(const dacl::Rule &rule);
 std::vector<dacl::Rule> GetRules();
 }  // namespace dacl::proto
 

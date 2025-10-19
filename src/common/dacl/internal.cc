@@ -1,45 +1,15 @@
 #include "internal.h"
 
 namespace dacl::proto::internal {
-bool EncodeDelRule(const std::string &path, void *buf, usize *result_len) {
+bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len) {
     if (!buf) {
         return false;
     }
 
     auto ptr = reinterpret_cast<char *>(buf);
-    {
-        usize del_msg_size = strlen(internal::DelMessage);
-        memcpy(ptr, internal::DelMessage, del_msg_size + 1);
-        ptr = reinterpret_cast<char *>(ptr) + del_msg_size + 1;
-    }
-    usize size = path.size() + 1;
-    memcpy(ptr, path.c_str(), size);
-    ptr += size;
 
-    *result_len =
-        usize(reinterpret_cast<char *>(ptr) - reinterpret_cast<char *>(buf));
-
-    return true;
-}
-
-std::string DecodeDelRule(const void *buf) {
-    if (!buf) return {};
-
-    return reinterpret_cast<const char *>(buf);
-}
-
-bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len,
-                bool with_set) {
-    if (!buf) {
-        return false;
-    }
-
-    auto ptr = reinterpret_cast<char *>(buf);
-    if (with_set) {
-        usize set_msg_size = strlen(internal::SetMessage);
-        memcpy(ptr, internal::SetMessage, set_msg_size + 1);
-        ptr = reinterpret_cast<char *>(ptr) + set_msg_size + 1;
-    }
+    *reinterpret_cast<int *>(ptr) = rule.id;
+    ptr += sizeof(rule.id);
 
     *reinterpret_cast<Rule::Type *>(ptr) = rule.type;
     ptr += sizeof(rule.type);
@@ -74,6 +44,9 @@ dacl::Rule DecodeRule(const void *buf, usize *used_len) {
     auto ptr = reinterpret_cast<const char *>(buf);
 
     dacl::Rule rule{};
+
+    memcpy(&rule.id, ptr, sizeof(rule.id));
+    ptr += sizeof(rule.id);
 
     memcpy(&rule.type, ptr, sizeof(rule.type));
     ptr += sizeof(rule.type);
