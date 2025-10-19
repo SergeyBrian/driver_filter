@@ -1,3 +1,10 @@
+If:
+  PathMatch: .*\.(h|inc|inl)$
+CompileFlags:
+  Add: [-xc++-header, -std=c++23]
+
+---
+
 CompileFlags:
   Add:
     - --driver-mode=cl
