@@ -100,13 +100,13 @@ SummarizedRule Summarize(const std::vector<Rule> &rules) {
         }
 
         if (rule.access_mask & u8(Rule::Permission::Read)) {
-            mask |= STANDARD_RIGHTS_READ;
+            mask |= FILE_GENERIC_READ;
         }
         if (rule.access_mask & u8(Rule::Permission::Write)) {
-            mask |= STANDARD_RIGHTS_WRITE;
+            mask |= FILE_GENERIC_WRITE;
         }
-        if (rule.access_mask & u8(Rule::Permission::Delete)) {
-            mask |= DELETE;
+        if (rule.access_mask & u8(Rule::Permission::Execute)) {
+            mask |= FILE_GENERIC_EXECUTE;
         }
 
         if (rule.type == Rule::Type::Allow) {

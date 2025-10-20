@@ -7,7 +7,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 find_package(WDK REQUIRED)
 include(FetchContent)
 
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD 23)
 set(CMAKE_CXX_STANDARD 23)
 
 FetchContent_Declare(
@@ -19,6 +19,7 @@ FetchContent_MakeAvailable(sqlite3)
 set(DRIVER_SRC
     src/driver/main.c
     src/common/dacl/rule.c
+    src/driver/trie.c
 )
 
 set(USER_SRC
@@ -103,3 +104,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 enable_language(C)
 set_source_files_properties(src/driver/main.c PROPERTIES LANGUAGE C)
+
+target_compile_definitions(DriverFilter PRIVATE
+    NTDDI_VERSION=NTDDI_WIN10
+    _WIN32_WINNT=0x0A00
+)

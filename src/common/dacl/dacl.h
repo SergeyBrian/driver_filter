@@ -17,8 +17,8 @@ struct Rule {
         None = 0,
         Read = 1u << 0,
         Write = 1u << 1,
-        Delete = 1u << 2,
-        All = Read | Write | Delete,
+        Execute = 1u << 2,
+        All = Read | Write | Execute,
     };
     u8 access_mask;
     std::string path;

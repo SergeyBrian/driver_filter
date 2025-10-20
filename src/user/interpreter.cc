@@ -25,7 +25,7 @@ static void PrintHelp() {
     std::println("\tall");
     std::println("\t[r]ead");
     std::println("\t[w]rite");
-    std::println("\t[d]elete");
+    std::println("\te[x]ecute");
 }
 
 enum class Command : u8 {
@@ -132,7 +132,7 @@ static bool HandleSet(std::stack<std::string_view> &args) {
                     rule.access_mask |= u8(dacl::Rule::Permission::Write);
                     break;
                 case 'd':
-                    rule.access_mask |= u8(dacl::Rule::Permission::Delete);
+                    rule.access_mask |= u8(dacl::Rule::Permission::Execute);
                     break;
                 default:
                     logger::Error("Unexpected permission code `{}`", c);

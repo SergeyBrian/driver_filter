@@ -5,7 +5,7 @@
 #include <windows.h>
 
 SummarizedRule DecodeSummarizedRule(const void *buf) {
-    SummarizedRule res;
+    SummarizedRule res = {};
 
     if (buf == NULL) {
         return res;
@@ -35,11 +35,11 @@ BOOL EncodeSummarizedRule(SummarizedRule rule, void *buf, ULONG *used_len) {
 
     char *ptr = (char *)buf;
 
-    ULONG s = strlen(rule.prefix) + 1;
+    ULONG s = (ULONG)strlen(rule.prefix) + 1;
     memcpy(ptr, rule.prefix, s);
     ptr += s;
 
-    s = strlen(rule.username) + 1;
+    s = (ULONG)strlen(rule.username) + 1;
     memcpy(ptr, rule.username, s);
     ptr += s;
 

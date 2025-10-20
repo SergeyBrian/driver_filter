@@ -4,12 +4,14 @@
 #include <string.h>
 #include <suppress.h>
 #include <ntddk.h>
+#include <wdm.h>
 #include <wdmsec.h>
 
 #include <stdio.h>
 
 #include "common/dacl/rule.h"
 #include "driver.h"
+#include "trie.h"
 
 #pragma prefast(disable : __WARNING_ENCODE_MEMBER_FUNCTION_POINTER, \
                 "Not valid for kernel mode drivers")
@@ -28,6 +30,7 @@ static PDEVICE_OBJECT gCtlDev;
 DRIVER_DISPATCH CtlCreateClose, CtlDeviceControl;
 
 static ULONG_PTR OperationStatusCtx = 1;
+static PTrie gTrie;
 
 #define DBG_TRACE_ROUTINES 0x1
 #define DBG_TRACE_STATUS 0x1 << 1
@@ -174,6 +177,9 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject,
     UNREFERENCED_PARAMETER(RegistryPath);
 
     DBG_PRINT(DBG_TRACE_ROUTINES, ("DriverFilter!DriverEntry Entered\n"));
+
+    TrieCreate(&gTrie);
+    // TODO иницилизировать дефлотными данными при старте
 
     status =
         FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
@@ -329,6 +335,7 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     ULONG inLen = sp->Parameters.DeviceIoControl.InputBufferLength;
     ULONG outLen = sp->Parameters.DeviceIoControl.OutputBufferLength;
     SummarizedRule rule;
+    UNICODE_STRING prefix, username;
 
     UNREFERENCED_PARAMETER(DevObj);
     DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl: Entered\n"));
@@ -355,6 +362,36 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
             DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl Successfully "
                                   "decoded rule for path %s user %s",
                                   rule.prefix, rule.username));
+            ANSI_STRING ansi_prefix;
+            ANSI_STRING ansi_username;
+
+            RtlInitAnsiString(&ansi_prefix, rule.prefix);
+            RtlInitAnsiString(&ansi_username, rule.username);
+
+            RtlAnsiStringToUnicodeString(&prefix, &ansi_prefix, TRUE);
+            RtlAnsiStringToUnicodeString(&username, &ansi_username, TRUE);
+
+            TrieInsertRule(gTrie, &prefix, &username, rule.allow & ~rule.deny);
+
+            ACCESS_MASK test = 0;
+            if (!TrieLookupRule(gTrie, &prefix, &username, &test)) {
+                DBG_PRINT(
+                    DBG_ERROR,
+                    ("DriverFilter!CtlDeviceControl can't find inserted rule"));
+                break;
+            }
+            if (test != (rule.allow & ~rule.deny)) {
+                DBG_PRINT(DBG_ERROR,
+                          ("DriverFilter!CtlDeviceControl inserted and "
+                           "selected masks mismatch 0x%x vs 0x%x",
+                           rule.allow & ~rule.deny, test));
+                break;
+            }
+
+            DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl trie insert "
+                                  "success. 0x%x = 0x%x",
+                                  rule.allow & ~rule.deny, test));
+
             st = STATUS_SUCCESS;
             break;
         default:

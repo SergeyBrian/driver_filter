@@ -25,6 +25,8 @@ CompileFlags:
     - -Wno-missing-field-initializers
     - -Wno-unknown-pragmas
     - -Wno-switch-enum
+    - -Wno-c23-extensions
+    - -Wno-declaration-after-statement
 
 Diagnostics:
   ClangTidy:
