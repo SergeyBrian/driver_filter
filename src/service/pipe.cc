@@ -1,4 +1,6 @@
 #include "pipe.h"
+#include <cstring>
+#include "service/ioctl.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -30,11 +32,32 @@ static void ProcessRequest(const HANDLE pipe) {
     buf[bytesRead] = 0;
     logA("[svc] got '%s' (%lu bytes)", buf, bytesRead);
 
+    defer {
+        if (!FlushFileBuffers(pipe)) {
+            logA("[svc] FlushFileBuffers failed: %lu", GetLastError());
+        }
+    };
+
     const char *resp{};
 
     logA("[svc] Received: %s", buf);
     if (strcmp(buf, internal::PingMessage) == 0) {
-        resp = internal::PongMessage;
+        logA("[svc] Processing ping");
+        DWORD written{};
+
+        std::string driverVersion = ioctl::GetStatus();
+        logA("[svc] Driver response: %s", driverVersion.c_str());
+        usize msg_size = strlen(internal::PongMessage) + 1;
+        std::memcpy(buf, internal::PongMessage, msg_size);
+        std::memcpy(buf + msg_size, driverVersion.c_str(),
+                    driverVersion.size() + 1);
+
+        if (!WriteFile(pipe, buf, DWORD(msg_size + driverVersion.size() + 1),
+                       &written, nullptr)) {
+            logA("[svc] WriteFile() failed: %lu", resp, GetLastError());
+        }
+
+        return;
     } else if (strncmp(buf, internal::SetMessage,
                        strlen(internal::SetMessage)) == 0) {
         dacl::Rule rule =
@@ -93,22 +116,16 @@ static void ProcessRequest(const HANDLE pipe) {
             sent_size += written;
         }
 
-        if (!FlushFileBuffers(pipe)) {
-            logA("[svc] FlushFileBuffers failed: %lu", GetLastError());
-        }
-
         return;
     } else {
+        logA("[svc] Unknown request");
+
         resp = internal::RespUnknownRequest;
     }
 
     DWORD bytesWritten = 0;
     if (!WriteFile(pipe, resp, DWORD(strlen(resp)), &bytesWritten, nullptr)) {
         logA("[svc] WriteFile(resp='%s') failed: %lu", resp, GetLastError());
-    }
-
-    if (!FlushFileBuffers(pipe)) {
-        logA("[svc] FlushFileBuffers failed: %lu", GetLastError());
     }
 }
 

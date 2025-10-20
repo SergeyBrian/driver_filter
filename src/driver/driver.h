@@ -7,6 +7,10 @@ extern "C" {
 
 const wchar_t *DeviceName = L"\\Device\\DriverFilterControl";
 const wchar_t *DeviceSymName = L"\\??\\DriverFilterControl";
+const char *DriverVersion = "v0.0.1";
+
+#define IOCTL_PING \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #ifdef __cplusplus
 }  // extern "C"

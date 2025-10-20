@@ -48,11 +48,11 @@ static thread_local auto tid = utils::strconv::to_base(
 template <typename... Args>
 inline void Log(LogType log_type, std::format_string<Args...> format,
                 Args &&...args) {
-#ifdef NDEBUG
+    /*#ifdef NDEBUG*/
     if (log_type < LogType::Info) {
         return;
     }
-#endif
+    /*#endif*/
 
     const char *color = COLOR_RESET;
     const char *prefix = "";
@@ -91,7 +91,7 @@ inline void Log(LogType log_type, std::format_string<Args...> format,
 
     std::cout << color << tid_prefix << prefix << message << reset << '\n';
 
-#if defined(_WIN32) && !defined(NDEBUG)
+    /*#if defined(_WIN32) && !defined(NDEBUG)*/
     static DWORD last_received_err{};
     if (log_type == LogType::Error) {
         DWORD err = GetLastError();
@@ -115,7 +115,7 @@ inline void Log(LogType log_type, std::format_string<Args...> format,
             }
         }
     }
-#endif
+    /*#endif*/
 }
 
 template <typename... Args>
@@ -125,10 +125,9 @@ inline void Okay(std::format_string<Args...> format, Args &&...args) {
 
 template <typename... Args>
 inline void Debug(std::format_string<Args...> format, Args &&...args) {
-#ifndef NDEBUG
+    /*#ifndef NDEBUG*/
     Log(LogType::Debug, format, std::forward<Args>(args)...);
-#else
-#endif
+    /*#endif*/
 }
 
 template <typename... Args>
@@ -155,9 +154,9 @@ class Logger {
 public:
     template <typename T>
     Logger &operator<<(const T &value) {
-#ifndef NDEBUG
+        /*#ifndef NDEBUG*/
         buffer_ << value;
-#endif
+        /*#endif*/
         Flush();
         return *this;
     }

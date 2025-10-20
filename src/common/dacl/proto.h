@@ -7,10 +7,11 @@
 namespace dacl::proto {
 struct Status {
     bool service_running;
+    bool driver_running;
 };
 
 std::optional<Status> GetStatus();
-bool Set(const dacl::Rule &rule);
+bool Set(dacl::Rule &rule);
 bool Del(const dacl::Rule &rule);
 std::vector<dacl::Rule> GetRules();
 }  // namespace dacl::proto

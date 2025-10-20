@@ -1,4 +1,5 @@
 #include "user.h"
+#include <optional>
 
 #pragma comment(lib, "netapi32.lib")
 
@@ -91,5 +92,41 @@ std::vector<User> List() {
     } while (status == ERROR_MORE_DATA);
 
     return res;
+}
+
+std::optional<User> Get(const std::string &name) {
+    DWORD cbSid{};
+    DWORD cchRef{};
+    SID_NAME_USE use{};
+    std::wstring wname{name.begin(), name.end()};
+    (void)LookupAccountNameW(L".", wname.c_str(), nullptr, &cbSid, nullptr,
+                             &cchRef, &use);
+    if (cbSid == 0 || cchRef == 0) {
+        logger::Error("LookupAccountNameW(size) failed (code: {})",
+                      GetLastError());
+        return std::nullopt;
+    }
+
+    std::vector<BYTE> sid(cbSid);
+    std::wstring refDomain;
+    refDomain.resize(cchRef);
+
+    if (!LookupAccountNameW(L".", wname.c_str(), sid.data(), &cbSid,
+                            refDomain.data(), &cchRef, &use)) {
+        logger::Error("LookupAccountNameW failed (code: {})", GetLastError());
+        return std::nullopt;
+    }
+
+    LPWSTR sid_str{};
+    if (!ConvertSidToStringSidW(reinterpret_cast<PSID>(sid.data()), &sid_str)) {
+        logger::Error("ConvertSidToStringSidW failed (code: {})",
+                      GetLastError());
+        return std::nullopt;
+    }
+
+    return User{
+        .name = name,
+        .sid = utils::strconv::to_utf8(sid_str),
+    };
 }
 }  // namespace dacl::user

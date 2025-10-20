@@ -26,6 +26,8 @@ static HANDLE Connect() {
 }
 
 std::optional<Status> GetStatus() {
+    Status res{};
+
     HANDLE pipe = Connect();
     if (!pipe) {
         return std::nullopt;
@@ -43,15 +45,32 @@ std::optional<Status> GetStatus() {
         return std::nullopt;
     }
 
-    if (strncmp(buf, internal::PongMessage, sizeof(buf)) != 0) {
+    if (strncmp(buf, internal::PongMessage, strlen(internal::PongMessage)) !=
+        0) {
         logger::Error("Ping failed. Response: {}", buf);
-        return Status{false};
+        return res;
     }
 
-    return Status{true};
+    res.service_running = true;
+
+    usize offset = strlen(internal::PongMessage) + 1;
+    if (read == offset || strlen(buf + offset) == 0) {
+        logger::Error("No driver response received");
+        return res;
+    }
+
+    logger::Info("Driver version: {}", buf + offset);
+
+    res.driver_running = true;
+
+    return res;
 }
 
-bool Set(const dacl::Rule &rule) {
+bool Set(dacl::Rule &rule) {
+    if (!dacl::PrepareRule(rule)) {
+        return false;
+    }
+
     HANDLE pipe = Connect();
     if (!pipe) {
         return false;
@@ -70,7 +89,7 @@ bool Set(const dacl::Rule &rule) {
     }
 
     DWORD written{};
-    WriteFile(pipe, buf, DWORD(len), &written, nullptr);
+    WriteFile(pipe, buf, DWORD(len + sizeof(set_msg_size)), &written, nullptr);
     std::memset(buf, 0, sizeof(buf));
     DWORD read{};
     if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {
@@ -101,7 +120,7 @@ bool Del(const dacl::Rule &rule) {
     }
 
     DWORD written{};
-    WriteFile(pipe, buf, DWORD(len), &written, nullptr);
+    WriteFile(pipe, buf, DWORD(len + del_msg_size), &written, nullptr);
     std::memset(buf, 0, sizeof(buf));
     DWORD read{};
     if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {

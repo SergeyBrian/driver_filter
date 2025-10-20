@@ -29,6 +29,7 @@ set(SERVICE_SRC
     src/service/main.cc
     src/service/pipe.cc
     src/service/database.cc
+    src/service/ioctl.cc
 )
 
 set(
@@ -58,29 +59,39 @@ target_link_libraries(DriverFilterService dacl sqlite3)
 add_executable(DriverFilterController ${USER_SRC} ${UTILS_SRC})
 target_link_libraries(DriverFilterController dacl)
 
-add_executable(ioctl_test src/driver/test.cc)
-
 wdk_add_driver(DriverFilter ${DRIVER_SRC})
 target_link_libraries(DriverFilter WDK::FLTMGR "${WDK_ROOT}/Lib/10.0.26100.0/km/x64/wdmsec.lib")
 
 add_library(dacl STATIC ${DACL_SRC})
 
 add_custom_command(
-      TARGET DriverFilter PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_LIST_DIR}/src/driver_filter.inf ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf
+    TARGET DriverFilter PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_LIST_DIR}/src/driver_filter.inf ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf
 )
 
 add_custom_command(
-      TARGET DriverFilter POST_BUILD
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      COMMAND stampinf.exe -f DriverFilter.inf
+    TARGET DriverFilter POST_BUILD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND stampinf.exe -f DriverFilter.inf
 )
 
 add_custom_command(
-      TARGET DriverFilter POST_BUILD
-      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.sys C:/Users/sbski/share
-      COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf C:/Users/sbski/share
+    TARGET DriverFilter POST_BUILD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.sys C:/Users/sbski/share
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.inf C:/Users/sbski/share
+)
+
+add_custom_command(
+    TARGET DriverFilterService POST_BUILD
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilterService.exe C:/Users/sbski/share
+)
+
+add_custom_command(
+    TARGET DriverFilterController
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_BINARY_DIR}/DriverFilter.exe C:/Users/sbski/share
 )
 
 set_target_properties(DriverFilter PROPERTIES OUTPUT_NAME "DriverFilter")

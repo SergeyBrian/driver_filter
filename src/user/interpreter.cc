@@ -62,12 +62,13 @@ static bool HandleList(std::stack<std::string_view> &args) {
         std::vector<dacl::Rule> rules = dacl::proto::GetRules();
         std::println("Active rules:");
 
-        std::print("{:<4}  {:<30}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
+        std::print("{:<4}  {:<50}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
                    "User", "Type", "Mask");
 
         for (const auto &r : rules) {
-            std::print("{:<4}  {:<30}  {:<20}  {:<6}  0x{:08X}\n", r.id, r.path,
-                       r.user, static_cast<int>(r.type), r.access_mask);
+            std::print("{:<4}  {:<50}  {:<20}  {:<6}  0x{:08X}\n", r.id, r.path,
+                       r.user, (r.type == dacl::Rule::Type::Allow) ? "A" : "D",
+                       r.access_mask);
         }
     } else {
         logger::Error("Unknown list target `{}`", target);
@@ -82,6 +83,7 @@ static bool HandleStatus() {
     auto status = dacl::proto::GetStatus();
     if (!status) return false;
     std::println("Service running={}", status->service_running);
+    std::println("Driver running={}", status->driver_running);
 
     return true;
 }

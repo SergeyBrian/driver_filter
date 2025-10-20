@@ -1,9 +1,12 @@
 #include <fltKernel.h>
 #include <ntifs.h>
 #include <dontuse.h>
+#include <string.h>
 #include <suppress.h>
 #include <ntddk.h>
 #include <wdmsec.h>
+
+#include <stdio.h>
 
 #include "driver.h"
 
@@ -317,9 +320,6 @@ static NTSTATUS GetRequestorUserToken(_In_ PFLT_CALLBACK_DATA Data,
 
 // Callbacks
 
-#define IOCTL_TEST \
-    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
-
 NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     PIO_STACK_LOCATION sp = IoGetCurrentIrpStackLocation(Irp);
     ULONG code = sp->Parameters.DeviceIoControl.IoControlCode;
@@ -332,11 +332,17 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl: Entered\n"));
 
     switch (code) {
-        case IOCTL_TEST:
+        case IOCTL_PING:
             DBG_PRINT(DBG_DEBUG,
-                      ("DriverFilter!CtlDeviceControl Received test '%s'",
+                      ("DriverFilter!CtlDeviceControl Received IOCTL_PING '%s'",
                        (char *)buf));
-            Irp->IoStatus.Information = 0;
+            if (outLen < strlen(DriverVersion)) {
+                Irp->IoStatus.Information = 0;
+                st = STATUS_BUFFER_TOO_SMALL;
+                break;
+            }
+            RtlCopyMemory(buf, DriverVersion, strlen(DriverVersion) + 1);
+            Irp->IoStatus.Information = (ULONG_PTR)strlen(DriverVersion) + 1;
             st = STATUS_SUCCESS;
             break;
         default:

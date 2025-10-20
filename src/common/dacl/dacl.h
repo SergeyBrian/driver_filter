@@ -20,6 +20,8 @@ struct Rule {
     std::string path;
     std::string user;
 };
+
+bool PrepareRule(Rule &rule);
 }  // namespace dacl
 
 #endif  // H_SRC_COMMON_DACL_DACL_H
