@@ -15,7 +15,7 @@ typedef unsigned long ULONG;
 
 typedef struct _SummarizedRule {
     char prefix[MAX_PATH];
-    char username[MAX_PATH];
+    char sid[MAX_PATH];
     ACCESS_MASK allow;
     ACCESS_MASK deny;
 } SummarizedRule, *PSummarizedRule;

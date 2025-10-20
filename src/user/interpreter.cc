@@ -67,12 +67,13 @@ static bool HandleList(std::stack<std::string_view> &args) {
 
         std::println("Active rules:");
 
-        std::print("{:<4}  {:<50}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
-                   "User", "Type", "Mask");
+        std::print("{:<4}  {:<50}  {:<20}  {:<20}  {:<6}  {:<8}\n", "Id",
+                   "Object", "User", "SID", "Type", "Mask");
 
         for (const auto &r : rules) {
-            std::print("{:<4}  {:<50}  {:<20}  {:<6}  0x{:08X}\n", r.id, r.path,
-                       r.user, (r.type == dacl::Rule::Type::Allow) ? "A" : "D",
+            std::print("{:<4}  {:<50}  {:<20}  {:<20}  {:<6}  0x{:08X}\n", r.id,
+                       r.path, r.user, r.sid,
+                       (r.type == dacl::Rule::Type::Allow) ? "A" : "D",
                        r.access_mask);
         }
     } else {

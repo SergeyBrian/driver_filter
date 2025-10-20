@@ -83,7 +83,7 @@ static void ProcessRequest(const HANDLE pipe) {
         }
 
         SummarizedRule summarized = dacl::Summarize(rules);
-        if (strlen(summarized.username) == 0) {
+        if (strlen(summarized.sid) == 0) {
             logA("[ERROR] Summarize failed");
             send_resp(internal::RespError);
             return;

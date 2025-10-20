@@ -23,6 +23,7 @@ struct Rule {
     u8 access_mask;
     std::string path;
     std::string user;
+    std::string sid;
 };
 
 bool PrepareRule(Rule &rule);

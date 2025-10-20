@@ -67,10 +67,11 @@ bool Connect() {
 
     char *err{};
     constexpr const char *init_q = R"(CREATE TABLE IF NOT EXISTS rules(
-                id INTEGER PRIMARY KEY,
-                path TEXT,
-                user TEXT,
-                type INTEGER,
+                id          INTEGER PRIMARY KEY,
+                path        TEXT,
+                user        TEXT,
+                sid         TEXT,
+                type        INTEGER,
                 access_mask INTEGER
             ))";
     if (sqlite3_exec(db, init_q, nullptr, nullptr, &err)) {
@@ -91,7 +92,7 @@ bool InsertRule(const dacl::Rule &rule) {
     }
 
     constexpr const char *q =
-        R"(INSERT INTO rules (path, user, type, access_mask) VALUES (?, ?, ?, ?);)";
+        R"(INSERT INTO rules (path, user, sid, type, access_mask) VALUES (?, ?, ?, ?, ?);)";
 
     sqlite3_stmt *stmt{};
     if (sqlite3_prepare_v2(db, q, -1, &stmt, nullptr)) {
@@ -101,8 +102,9 @@ bool InsertRule(const dacl::Rule &rule) {
 
     sqlite3_bind_text(stmt, 1, rule.path.c_str(), -1, nullptr);
     sqlite3_bind_text(stmt, 2, rule.user.c_str(), -1, nullptr);
-    sqlite3_bind_int(stmt, 3, int(rule.type));
-    sqlite3_bind_int(stmt, 4, rule.access_mask);
+    sqlite3_bind_text(stmt, 3, rule.sid.c_str(), -1, nullptr);
+    sqlite3_bind_int(stmt, 4, int(rule.type));
+    sqlite3_bind_int(stmt, 5, rule.access_mask);
 
     if (sqlite3_step(stmt) != SQLITE_DONE) {
         logA("[ERROR] InsertRule failed: cant insert (%s)", sqlite3_errmsg(db));
@@ -166,7 +168,8 @@ std::vector<dacl::Rule> GetRules(const dacl::Rule &in) {
     }
 
     std::string q = std::format(
-        "SELECT id, path, user, type, access_mask FROM rules WHERE {} ORDER BY "
+        "SELECT id, path, user, sid, type, access_mask FROM rules WHERE {} "
+        "ORDER BY "
         "id;",
         where);
 
@@ -207,11 +210,17 @@ std::vector<dacl::Rule> GetRules(const dacl::Rule &in) {
         }
 
         {
-            int v = sqlite3_column_int(stmt, 3);
+            const unsigned char *p = sqlite3_column_text(stmt, 3);
+            int n = sqlite3_column_bytes(stmt, 3);
+            r.sid.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+        }
+
+        {
+            int v = sqlite3_column_int(stmt, 4);
             r.type = dacl::Rule::Type(v);
         }
 
-        r.access_mask = u8(sqlite3_column_int(stmt, 4));
+        r.access_mask = u8(sqlite3_column_int(stmt, 5));
 
         res.push_back(std::move(r));
     }

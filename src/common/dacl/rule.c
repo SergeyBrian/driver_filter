@@ -16,7 +16,7 @@ SummarizedRule DecodeSummarizedRule(const void *buf) {
     strncpy(res.prefix, ptr, sizeof(res.prefix));
     ptr += strlen(ptr) + 1;
 
-    strncpy(res.username, ptr, sizeof(res.username));
+    strncpy(res.sid, ptr, sizeof(res.sid));
     ptr += strlen(ptr) + 1;
 
     memcpy(&res.allow, ptr, sizeof(res.allow));
@@ -39,8 +39,8 @@ BOOL EncodeSummarizedRule(SummarizedRule rule, void *buf, ULONG *used_len) {
     memcpy(ptr, rule.prefix, s);
     ptr += s;
 
-    s = (ULONG)strlen(rule.username) + 1;
-    memcpy(ptr, rule.username, s);
+    s = (ULONG)strlen(rule.sid) + 1;
+    memcpy(ptr, rule.sid, s);
     ptr += s;
 
     memcpy(ptr, &rule.allow, sizeof(rule.allow));

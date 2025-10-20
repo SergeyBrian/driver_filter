@@ -29,6 +29,12 @@ bool EncodeRule(const dacl::Rule &rule, void *buf, usize *result_len) {
         ptr += user_str_size;
     }
 
+    {
+        usize sid_str_size = rule.sid.size() + 1;
+        memcpy(ptr, rule.sid.data(), sid_str_size);
+        ptr += sid_str_size;
+    }
+
     if (result_len != nullptr) {
         *result_len = usize(reinterpret_cast<char *>(ptr) -
                             reinterpret_cast<char *>(buf));
@@ -59,6 +65,9 @@ dacl::Rule DecodeRule(const void *buf, usize *used_len) {
 
     rule.user = ptr;
     ptr += rule.user.size() + 1;
+
+    rule.sid = ptr;
+    ptr += rule.sid.size() + 1;
 
     if (used_len != nullptr) {
         *used_len = usize(ptr - reinterpret_cast<const char *>(buf));

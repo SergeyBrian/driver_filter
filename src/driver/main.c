@@ -361,12 +361,12 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
             rule = DecodeSummarizedRule(buf);
             DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl Successfully "
                                   "decoded rule for path %s user %s",
-                                  rule.prefix, rule.username));
+                                  rule.prefix, rule.sid));
             ANSI_STRING ansi_prefix;
             ANSI_STRING ansi_username;
 
             RtlInitAnsiString(&ansi_prefix, rule.prefix);
-            RtlInitAnsiString(&ansi_username, rule.username);
+            RtlInitAnsiString(&ansi_username, rule.sid);
 
             RtlAnsiStringToUnicodeString(&prefix, &ansi_prefix, TRUE);
             RtlAnsiStringToUnicodeString(&username, &ansi_username, TRUE);
@@ -481,7 +481,104 @@ PreOperationCallback(_Inout_ PFLT_CALLBACK_DATA Data,
         DBG_PRINT(DBG_DEBUG,
                   ("DriverFilter!PreOperationCallback: FileName %wZ\n",
                    &nameInfo->Name));
-        // TODO filtering logic
+        UNICODE_STRING sidStr;
+        RtlConvertSidToUnicodeString(&sidStr, ctx->UserSid, TRUE);
+
+        ACCESS_MASK am;
+        if (!TrieLookupRule(gTrie, &nameInfo->Name, &sidStr, &am)) {
+            return FLT_PREOP_SUCCESS_WITH_CALLBACK;
+        }
+
+        /*
+         * ACCESS CONTROL BEGIN
+         */
+
+        {
+            ACCESS_MASK allow = am;
+
+            ACCESS_MASK req = 0;
+
+            static const GENERIC_MAPPING kFileGeneric = {
+                FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_GENERIC_EXECUTE,
+                FILE_ALL_ACCESS};
+
+            UCHAR mj = Data->Iopb->MajorFunction;
+
+            switch (mj) {
+                case IRP_MJ_CREATE: {
+                    req = Data->Iopb->Parameters.Create.SecurityContext
+                              ->DesiredAccess;
+
+                    if (Data->Iopb->Parameters.Create.Options &
+                        FILE_DELETE_ON_CLOSE) {
+                        req |= DELETE;
+                    }
+                    break;
+                }
+
+                case IRP_MJ_WRITE:
+                    req = FILE_WRITE_DATA | FILE_APPEND_DATA;
+                    break;
+
+                case IRP_MJ_READ:
+                    req = FILE_READ_DATA;
+                    break;
+
+                case IRP_MJ_SET_INFORMATION: {
+                    req = FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA;
+
+                    FILE_INFORMATION_CLASS cls =
+                        Data->Iopb->Parameters.SetFileInformation
+                            .FileInformationClass;
+
+                    if (cls == FileDispositionInformation ||
+                        cls == FileDispositionInformationEx ||
+                        cls == FileRenameInformation ||
+                        cls == FileRenameInformationEx ||
+                        cls == FileLinkInformation ||
+                        cls == FileLinkInformationEx) {
+                        req |= DELETE;
+                    }
+                    break;
+                }
+
+                case IRP_MJ_SET_SECURITY:
+
+                    req = WRITE_DAC | WRITE_OWNER | ACCESS_SYSTEM_SECURITY;
+                    break;
+
+                case IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION: {
+                    ULONG prot =
+                        Data->Iopb->Parameters.AcquireForSectionSynchronization
+                            .PageProtection;
+
+                    if (prot &
+                        (PAGE_EXECUTE | PAGE_EXECUTE_READ |
+                         PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)) {
+                        req = FILE_EXECUTE;
+                    }
+                    break;
+                }
+
+                default:
+
+                    break;
+            }
+
+            if (allow)
+                RtlMapGenericMask(&allow, (PGENERIC_MAPPING)&kFileGeneric);
+            if (req) RtlMapGenericMask(&req, (PGENERIC_MAPPING)&kFileGeneric);
+
+            if (req && ((req & ~allow) != 0)) {
+                Data->IoStatus.Status = STATUS_ACCESS_DENIED;
+                Data->IoStatus.Information = 0;
+                return FLT_PREOP_COMPLETE;
+            }
+        }
+
+        /*
+         * ACCESS CONTROL END
+         */
     } else {
         DBG_PRINT(DBG_ERROR,
                   ("DriverFilter!PreOperationCallback: "

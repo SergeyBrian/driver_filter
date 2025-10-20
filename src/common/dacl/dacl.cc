@@ -60,10 +60,12 @@ bool PrepareRule(Rule &rule) {
 
     rule.path = utils::strconv::to_utf8(normalized_path.c_str());
 
-    if (!dacl::user::Get(rule.user)) {
+    auto user = dacl::user::Get(rule.user);
+    if (!user) {
         logger::Error("User '{}' not found", rule.user);
         return false;
     }
+    rule.sid = user->sid;
 
     return true;
 }
@@ -80,7 +82,7 @@ SummarizedRule Summarize(const std::vector<Rule> &rules) {
     };
 
     strncpy_s(res.prefix, rules.front().path.c_str(), sizeof(res.prefix));
-    strncpy_s(res.username, rules.front().user.c_str(), sizeof(res.username));
+    strncpy_s(res.sid, rules.front().sid.c_str(), sizeof(res.sid));
 
     for (const auto &rule : rules) {
         ACCESS_MASK mask{};
@@ -92,21 +94,21 @@ SummarizedRule Summarize(const std::vector<Rule> &rules) {
             return {};
         }
 
-        if (std::strcmp(rule.user.c_str(), res.username) != 0) {
+        if (std::strcmp(rule.sid.c_str(), res.sid) != 0) {
             logger::Error(
                 "Can't summarize rules with differing users: {} != {}",
-                rule.user, res.username);
+                rule.sid, res.sid);
             return {};
         }
 
         if (rule.access_mask & u8(Rule::Permission::Read)) {
-            mask |= FILE_GENERIC_READ;
+            mask |= GENERIC_READ;
         }
         if (rule.access_mask & u8(Rule::Permission::Write)) {
-            mask |= FILE_GENERIC_WRITE;
+            mask |= GENERIC_WRITE;
         }
         if (rule.access_mask & u8(Rule::Permission::Execute)) {
-            mask |= FILE_GENERIC_EXECUTE;
+            mask |= GENERIC_EXECUTE;
         }
 
         if (rule.type == Rule::Type::Allow) {
