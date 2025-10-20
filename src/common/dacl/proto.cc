@@ -1,5 +1,6 @@
 #include "proto.h"
 #include <string.h>
+#include "driver/driver.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -59,7 +60,14 @@ std::optional<Status> GetStatus() {
         return res;
     }
 
-    logger::Info("Driver version: {}", buf + offset);
+    std::string driver_version = buf + offset;
+    logger::Info("Driver version: {}", driver_version);
+
+    if (driver_version != DriverVersion) {
+        logger::Warn(
+            "This program was built for different driver version ({} != {})",
+            DriverVersion, driver_version);
+    }
 
     res.driver_running = true;
 
@@ -96,7 +104,11 @@ bool Set(dacl::Rule &rule) {
         logger::Error("ReadFile failed");
         return false;
     }
-    logger::Okay("{}", buf);
+    if (strncmp(buf, internal::RespOk, strlen(internal::RespOk)) == 0) {
+        logger::Info("Success");
+    } else {
+        logger::Warn("Service response: {}", buf);
+    }
 
     return true;
 }
@@ -153,6 +165,10 @@ std::vector<dacl::Rule> GetRules() {
     if (!ReadFile(pipe, &expected_size, sizeof(expected_size), &read,
                   nullptr)) {
         logger::Error("ReadFile failed");
+        return {};
+    }
+
+    if (expected_size == read) {
         return {};
     }
 

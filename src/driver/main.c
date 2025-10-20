@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 
+#include "common/dacl/rule.h"
 #include "driver.h"
 
 #pragma prefast(disable : __WARNING_ENCODE_MEMBER_FUNCTION_POINTER, \
@@ -327,6 +328,7 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     PVOID buf = Irp->AssociatedIrp.SystemBuffer;
     ULONG inLen = sp->Parameters.DeviceIoControl.InputBufferLength;
     ULONG outLen = sp->Parameters.DeviceIoControl.OutputBufferLength;
+    SummarizedRule rule;
 
     UNREFERENCED_PARAMETER(DevObj);
     DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl: Entered\n"));
@@ -343,6 +345,16 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
             }
             RtlCopyMemory(buf, DriverVersion, strlen(DriverVersion) + 1);
             Irp->IoStatus.Information = (ULONG_PTR)strlen(DriverVersion) + 1;
+            st = STATUS_SUCCESS;
+            break;
+        case IOCTL_UPDATE_RULE:
+            DBG_PRINT(
+                DBG_DEBUG,
+                ("DriverFilter!CtlDeviceControl Received IOCTL_UPDATE_RULE"));
+            rule = DecodeSummarizedRule(buf);
+            DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl Successfully "
+                                  "decoded rule for path %s user %s",
+                                  rule.prefix, rule.username));
             st = STATUS_SUCCESS;
             break;
         default:

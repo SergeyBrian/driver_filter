@@ -5,9 +5,10 @@
 namespace database {
 bool Connect();
 void Disconnect();
+
 bool InsertRule(const dacl::Rule &rule);
 bool DeleteRule(const dacl::Rule &path);
-std::vector<dacl::Rule> GetRules();
+std::vector<dacl::Rule> GetRules(const dacl::Rule &in);
 }  // namespace database
 
 #endif  // H_SRC_SERVICE_DATABASE_H

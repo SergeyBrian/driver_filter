@@ -60,6 +60,11 @@ static bool HandleList(std::stack<std::string_view> &args) {
         }
     } else if (target == "rules") {
         std::vector<dacl::Rule> rules = dacl::proto::GetRules();
+        if (rules.empty()) {
+            std::println("No rules found");
+            return false;
+        }
+
         std::println("Active rules:");
 
         std::print("{:<4}  {:<50}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
@@ -201,7 +206,5 @@ bool Process(std::stack<std::string_view> args) {
         default:
             std::unreachable();
     }
-
-    return true;
 }
 }  // namespace interpreter

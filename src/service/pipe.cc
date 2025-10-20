@@ -1,5 +1,6 @@
 #include "pipe.h"
 #include <cstring>
+#include "common/dacl/rule.h"
 #include "service/ioctl.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -38,11 +39,17 @@ static void ProcessRequest(const HANDLE pipe) {
         }
     };
 
-    const char *resp{};
+    auto send_resp = [&pipe](const char *resp) {
+        DWORD bytesWritten = 0;
+        if (!WriteFile(pipe, resp, DWORD(strlen(resp)), &bytesWritten,
+                       nullptr)) {
+            logA("[svc] WriteFile(resp='%s') failed: %lu", resp,
+                 GetLastError());
+        }
+    };
 
     logA("[svc] Received: %s", buf);
     if (strcmp(buf, internal::PingMessage) == 0) {
-        logA("[svc] Processing ping");
         DWORD written{};
 
         std::string driverVersion = ioctl::GetStatus();
@@ -54,7 +61,7 @@ static void ProcessRequest(const HANDLE pipe) {
 
         if (!WriteFile(pipe, buf, DWORD(msg_size + driverVersion.size() + 1),
                        &written, nullptr)) {
-            logA("[svc] WriteFile() failed: %lu", resp, GetLastError());
+            logA("[ERROR] WriteFile() failed: %lu", GetLastError());
         }
 
         return;
@@ -63,25 +70,44 @@ static void ProcessRequest(const HANDLE pipe) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::SetMessage) + 1);
 
-        if (database::InsertRule(rule)) {
-            resp = internal::RespOk;
-        } else {
-            resp = internal::RespError;
+        if (!database::InsertRule(rule)) {
+            send_resp(internal::RespError);
         }
 
+        auto rules = database::GetRules({.path = rule.path, .user = rule.user});
+        if (rules.empty()) {
+            logA("[ERROR] No rules after set");
+            send_resp(internal::RespError);
+            return;
+        }
+
+        SummarizedRule summarized = dacl::Summarize(rules);
+        if (strlen(summarized.username) == 0) {
+            logA("[ERROR] Summarize failed");
+            send_resp(internal::RespError);
+            return;
+        }
+
+        if (!ioctl::UpdateRule(summarized)) {
+            logA("[ERROR] ioctl UpdateRule failed");
+            send_resp(internal::RespError);
+            return;
+        }
+
+        send_resp(internal::RespOk);
+        return;
     } else if (strncmp(buf, internal::DelMessage,
                        strlen(internal::DelMessage)) == 0) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::DelMessage) + 1);
 
-        if (database::DeleteRule(rule)) {
-            resp = internal::RespOk;
-        } else {
-            resp = internal::RespError;
+        if (!database::DeleteRule(rule)) {
+            send_resp(internal::RespError);
         }
     } else if (strncmp(buf, internal::GetRulesMessage,
                        strlen(internal::GetRulesMessage)) == 0) {
-        auto rules = database::GetRules();
+        auto rules = database::GetRules({});
+
         char *tmp_buf = new char[512 * (1 + rules.size())];
         defer { delete[] tmp_buf; };
         char *ptr = tmp_buf;
@@ -111,22 +137,19 @@ static void ProcessRequest(const HANDLE pipe) {
             if (!WriteFile(pipe, ptr,
                            DWORD(std::min(sizeof(buf), full_size - sent_size)),
                            &written, nullptr)) {
-                logA("[svc] WriteFile() failed: %lu", resp, GetLastError());
+                logA("[ERROR] WriteFile() failed: %lu", GetLastError());
             }
             sent_size += written;
         }
 
         return;
     } else {
-        logA("[svc] Unknown request");
+        logA("[ERROR] Unknown request '%s'", buf);
 
-        resp = internal::RespUnknownRequest;
+        send_resp(internal::RespUnknownRequest);
     }
 
-    DWORD bytesWritten = 0;
-    if (!WriteFile(pipe, resp, DWORD(strlen(resp)), &bytesWritten, nullptr)) {
-        logA("[svc] WriteFile(resp='%s') failed: %lu", resp, GetLastError());
-    }
+    return;
 }
 
 static DWORD WINAPI worker(LPVOID param) {

@@ -1,11 +1,14 @@
 #include "dacl.h"
-#include "utils/strconv.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
 
+#include <cassert>
+
+#include "common/dacl/user.h"
 #include "utils/log.h"
+#include "utils/strconv.h"
 
 namespace dacl {
 static std::wstring NormalizeToNtPath(const std::wstring &input) {
@@ -64,4 +67,56 @@ bool PrepareRule(Rule &rule) {
 
     return true;
 }
+
+SummarizedRule Summarize(const std::vector<Rule> &rules) {
+    assert(!rules.empty());
+    if (rules.empty()) {
+        logger::Error("Can't summarize empty rules list");
+        return {};
+    }
+
+    SummarizedRule res{
+
+    };
+
+    strncpy_s(res.prefix, rules.front().path.c_str(), sizeof(res.prefix));
+    strncpy_s(res.username, rules.front().user.c_str(), sizeof(res.username));
+
+    for (const auto &rule : rules) {
+        ACCESS_MASK mask{};
+
+        if (std::strcmp(rule.path.c_str(), res.prefix) != 0) {
+            logger::Error(
+                "Can't summarize rules with differing paths: {} != {}",
+                rule.path, res.prefix);
+            return {};
+        }
+
+        if (std::strcmp(rule.user.c_str(), res.username) != 0) {
+            logger::Error(
+                "Can't summarize rules with differing users: {} != {}",
+                rule.user, res.username);
+            return {};
+        }
+
+        if (rule.access_mask & u8(Rule::Permission::Read)) {
+            mask |= STANDARD_RIGHTS_READ;
+        }
+        if (rule.access_mask & u8(Rule::Permission::Write)) {
+            mask |= STANDARD_RIGHTS_WRITE;
+        }
+        if (rule.access_mask & u8(Rule::Permission::Delete)) {
+            mask |= DELETE;
+        }
+
+        if (rule.type == Rule::Type::Allow) {
+            res.allow |= mask;
+        } else {
+            res.deny |= mask;
+        }
+    }
+
+    return res;
+}
+
 }  // namespace dacl

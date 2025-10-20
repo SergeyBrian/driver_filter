@@ -15,6 +15,7 @@ constexpr const char *GetRulesMessage = "getrules";
 
 constexpr const char *RespOk = "ok";
 constexpr const char *RespError = "error";
+constexpr const char *RespEmpty = "empty";
 
 constexpr const char *RespUnknownRequest = "unknown_req";
 

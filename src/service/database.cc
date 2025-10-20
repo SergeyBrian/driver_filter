@@ -144,7 +144,7 @@ bool DeleteRule(const dacl::Rule &rule) {
     return true;
 }
 
-std::vector<dacl::Rule> GetRules() {
+std::vector<dacl::Rule> GetRules(const dacl::Rule &in) {
     std::vector<dacl::Rule> res;
 
     if (db == nullptr) {
@@ -152,14 +152,36 @@ std::vector<dacl::Rule> GetRules() {
         return res;
     }
 
-    constexpr const char *q =
-        "SELECT id, path, user, type, access_mask FROM rules ORDER BY id;";
+    std::string where = "1";
+    std::vector<std::string> args{};
+
+    if (!in.user.empty()) {
+        where = std::format("{} AND {}", where, "user = ?");
+        args.push_back(in.user);
+    }
+
+    if (!in.path.empty()) {
+        where = std::format("{} AND {}", where, "path = ?");
+        args.push_back(in.path);
+    }
+
+    std::string q = std::format(
+        "SELECT id, path, user, type, access_mask FROM rules WHERE {} ORDER BY "
+        "id;",
+        where);
 
     sqlite3_stmt *stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db, q, -1, &stmt, nullptr);
+    int rc = sqlite3_prepare_v2(db, q.c_str(), -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         logA("[ERROR] GetRules prepare failed: %s", sqlite3_errmsg(db));
         return res;
+    }
+
+    {
+        int i = 1;
+        for (const auto &arg : args) {
+            sqlite3_bind_text(stmt, i++, arg.c_str(), -1, nullptr);
+        }
     }
 
     res.reserve(32);

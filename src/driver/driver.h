@@ -11,6 +11,8 @@ const char *DriverVersion = "v0.0.1";
 
 #define IOCTL_PING \
     CTL_CODE(FILE_DEVICE_UNKNOWN, 0x900, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_UPDATE_RULE \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x901, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 #ifdef __cplusplus
 }  // extern "C"

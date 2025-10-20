@@ -18,6 +18,7 @@ FetchContent_MakeAvailable(sqlite3)
 
 set(DRIVER_SRC
     src/driver/main.c
+    src/common/dacl/rule.c
 )
 
 set(USER_SRC
@@ -38,6 +39,7 @@ set(
     src/common/dacl/user.cc
     src/common/dacl/proto.cc
     src/common/dacl/internal.cc
+    src/common/dacl/rule.c
 )
 
 set(UTILS_SRC
