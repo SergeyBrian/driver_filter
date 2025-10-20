@@ -65,8 +65,9 @@ static void ProcessRequest(const HANDLE pipe) {
         }
 
         return;
-    } else if (strncmp(buf, internal::SetMessage,
-                       strlen(internal::SetMessage)) == 0) {
+    }
+
+    if (strncmp(buf, internal::SetMessage, strlen(internal::SetMessage)) == 0) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::SetMessage) + 1);
 
@@ -96,16 +97,21 @@ static void ProcessRequest(const HANDLE pipe) {
 
         send_resp(internal::RespOk);
         return;
-    } else if (strncmp(buf, internal::DelMessage,
-                       strlen(internal::DelMessage)) == 0) {
+    }
+
+    if (strncmp(buf, internal::DelMessage, strlen(internal::DelMessage)) == 0) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::DelMessage) + 1);
 
         if (!database::DeleteRule(rule)) {
             send_resp(internal::RespError);
         }
-    } else if (strncmp(buf, internal::GetRulesMessage,
-                       strlen(internal::GetRulesMessage)) == 0) {
+        send_resp(internal::RespOk);
+        return;
+    }
+
+    if (strncmp(buf, internal::GetRulesMessage,
+                strlen(internal::GetRulesMessage)) == 0) {
         auto rules = database::GetRules({});
 
         char *tmp_buf = new char[512 * (1 + rules.size())];
@@ -143,13 +149,10 @@ static void ProcessRequest(const HANDLE pipe) {
         }
 
         return;
-    } else {
-        logA("[ERROR] Unknown request '%s'", buf);
-
-        send_resp(internal::RespUnknownRequest);
     }
 
-    return;
+    logA("[ERROR] Unknown request '%s'", buf);
+    send_resp(internal::RespUnknownRequest);
 }
 
 static DWORD WINAPI worker(LPVOID param) {
