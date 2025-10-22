@@ -233,4 +233,57 @@ std::vector<dacl::Rule> GetRules(const dacl::Rule &in) {
     sqlite3_finalize(stmt);
     return res;
 }
+
+std::optional<dacl::Rule> GetRule(int id) {
+    constexpr const char *q =
+        "SELECT id, path, user, sid, type, access_mask FROM rules WHERE id = "
+        "?;";
+    sqlite3_stmt *stmt = nullptr;
+    int rc = sqlite3_prepare_v2(db, q, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        logA("[ERROR] GetRule prepare failed: %s", sqlite3_errmsg(db));
+        return std::nullopt;
+    }
+
+    sqlite3_bind_int(stmt, 1, id);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        logA("[ERROR] GetRule step failed");
+        return std::nullopt;
+    }
+
+    dacl::Rule r{};
+
+    {
+        int v = sqlite3_column_int(stmt, 0);
+        r.id = v;
+    }
+
+    {
+        const unsigned char *p = sqlite3_column_text(stmt, 1);
+        int n = sqlite3_column_bytes(stmt, 1);
+        r.path.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+    }
+
+    {
+        const unsigned char *p = sqlite3_column_text(stmt, 2);
+        int n = sqlite3_column_bytes(stmt, 2);
+        r.user.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+    }
+
+    {
+        const unsigned char *p = sqlite3_column_text(stmt, 3);
+        int n = sqlite3_column_bytes(stmt, 3);
+        r.sid.assign(p ? reinterpret_cast<const char *>(p) : "", usize(n));
+    }
+
+    {
+        int v = sqlite3_column_int(stmt, 4);
+        r.type = dacl::Rule::Type(v);
+    }
+
+    r.access_mask = u8(sqlite3_column_int(stmt, 5));
+
+    return r;
+}
 }  // namespace database

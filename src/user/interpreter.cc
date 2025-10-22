@@ -20,6 +20,7 @@ static void PrintHelp() {
     std::println("\tlist {{users|rules}}");
     std::println("\tstatus");
     std::println("\tdelete <id>");
+    std::println("\tnotifier <start|stop>");
 
     std::println("\nAvailable permissions:");
     std::println("\tall");
@@ -34,6 +35,7 @@ enum class Command : u8 {
     List,
     Status,
     Delete,
+    Notifier,
 };
 
 static Command ParseCommand(std::string_view s) {
@@ -41,6 +43,7 @@ static Command ParseCommand(std::string_view s) {
     if (s == "list") return Command::List;
     if (s == "status") return Command::Status;
     if (s == "delete") return Command::Delete;
+    if (s == "notifier") return Command::Notifier;
     return Command::Invalid;
 }
 
@@ -67,13 +70,12 @@ static bool HandleList(std::stack<std::string_view> &args) {
 
         std::println("Active rules:");
 
-        std::print("{:<4}  {:<50}  {:<20}  {:<20}  {:<6}  {:<8}\n", "Id",
-                   "Object", "User", "SID", "Type", "Mask");
+        std::print("{:<4}  {:<50}  {:<20}  {:<6}  {:<8}\n", "Id", "Object",
+                   "User", "Type", "Mask");
 
         for (const auto &r : rules) {
-            std::print("{:<4}  {:<50}  {:<20}  {:<20}  {:<6}  0x{:08X}\n", r.id,
-                       r.path, r.user, r.sid,
-                       (r.type == dacl::Rule::Type::Allow) ? "A" : "D",
+            std::print("{:<4}  {:<50}  {:<20}  {:<6}  0x{:08X}\n", r.id, r.path,
+                       r.user, (r.type == dacl::Rule::Type::Allow) ? "A" : "D",
                        r.access_mask);
         }
     } else {
@@ -132,7 +134,7 @@ static bool HandleSet(std::stack<std::string_view> &args) {
                 case 'w':
                     rule.access_mask |= u8(dacl::Rule::Permission::Write);
                     break;
-                case 'd':
+                case 'x':
                     rule.access_mask |= u8(dacl::Rule::Permission::Execute);
                     break;
                 default:
@@ -179,6 +181,28 @@ static bool HandleDelete(std::stack<std::string_view> &args) {
     return true;
 }
 
+bool HandleNotifier(std::stack<std::string_view> args) {
+    if (args.empty()) {
+        logger::Error("Not enough arguments");
+        PrintHelp();
+        return false;
+    }
+
+    bool start{};
+
+    if (args.top() == "start") {
+        start = true;
+    } else if (args.top() == "stop") {
+        start = false;
+    } else {
+        logger::Error("Unknown option `{}`", args.top());
+        PrintHelp();
+        return false;
+    }
+
+    return dacl::proto::ToggleNotifier(start);
+}
+
 bool Process(std::stack<std::string_view> args) {
     if (args.empty()) {
         PrintHelp();
@@ -204,6 +228,8 @@ bool Process(std::stack<std::string_view> args) {
             return HandleStatus();
         case Command::Delete:
             return HandleDelete(args);
+        case Command::Notifier:
+            return HandleNotifier(args);
         default:
             std::unreachable();
     }

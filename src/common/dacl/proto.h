@@ -14,6 +14,7 @@ std::optional<Status> GetStatus();
 bool Set(dacl::Rule &rule);
 bool Del(const dacl::Rule &rule);
 std::vector<dacl::Rule> GetRules();
+bool ToggleNotifier(bool start);
 }  // namespace dacl::proto
 
 #endif  // H_SRC_COMMON_DACL_PROTO_H

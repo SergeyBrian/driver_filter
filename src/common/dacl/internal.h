@@ -12,6 +12,7 @@ constexpr const char *PongMessage = "pong";
 constexpr const char *SetMessage = "set";
 constexpr const char *DelMessage = "del";
 constexpr const char *GetRulesMessage = "getrules";
+constexpr const char *ToggleNotifierMessage = "notifier";
 
 constexpr const char *RespOk = "ok";
 constexpr const char *RespError = "error";

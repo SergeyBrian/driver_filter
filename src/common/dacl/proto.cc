@@ -198,4 +198,36 @@ std::vector<dacl::Rule> GetRules() {
 
     return res;
 }
+
+bool ToggleNotifier(bool start) {
+    HANDLE pipe = Connect();
+    if (!pipe) {
+        return {};
+    }
+    defer { CloseHandle(pipe); };
+
+    char buf[512]{};
+
+    usize set_msg_size = strlen(internal::ToggleNotifierMessage) + 1;
+    std::memcpy(buf, internal::ToggleNotifierMessage, set_msg_size);
+    *reinterpret_cast<bool *>(buf + set_msg_size) = start;
+
+    DWORD written{};
+    WriteFile(pipe, buf, DWORD(set_msg_size + sizeof(start)), &written,
+              nullptr);
+
+    DWORD read{};
+    std::memset(buf, 0, sizeof(buf));
+    if (!ReadFile(pipe, buf, sizeof(buf) - 1, &read, nullptr)) {
+        logger::Error("ReadFile failed");
+        return false;
+    }
+    if (strncmp(buf, internal::RespOk, strlen(internal::RespOk)) == 0) {
+        return true;
+    }
+
+    logger::Error("Service responded: {}", buf);
+
+    return false;
+}
 }  // namespace dacl::proto

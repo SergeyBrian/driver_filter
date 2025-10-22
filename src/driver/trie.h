@@ -10,6 +10,9 @@
 #define POOL_TAG_STR 'rStT'   // strings
 #define POOL_TAG_RULE 'lRuT'  // RuleRec
 
+#define CACHE_PATH \
+    L"\\??\\C:\\ProgramData\\DriverFilterSvc\\db\\driver-cache.bin"
+
 typedef struct _Rule {
     ACCESS_MASK mask;
 } Rule, *PRule;
@@ -352,6 +355,302 @@ _IRQL_requires_max_(DISPATCH_LEVEL) static BOOLEAN
     ExReleasePushLockShared(&trie->Lock);
     if (found && outMask) *outMask = acc;
     return found;
+}
+
+static __forceinline BOOLEAN _HasChildren(_In_ PVertex v) {
+    return !RtlIsGenericTableEmptyAvl(&v->children);
+}
+static __forceinline BOOLEAN _HasRules(_In_ PVertex v) {
+    return !RtlIsGenericTableEmptyAvl(&v->rules);
+}
+
+static NTSTATUS VertexDeleteRule(_In_ PVertex v,
+                                 _In_ PCUNICODE_STRING userKey) {
+    if (!v || !userKey) return STATUS_INVALID_PARAMETER;
+
+    RuleRec probe;
+    probe.User = *userKey;
+    probe.R.mask = 0;
+    PRuleRec rr = (PRuleRec)RtlLookupElementGenericTableAvl(&v->rules, &probe);
+    if (!rr) return STATUS_NOT_FOUND;
+
+    _FreeUnicodeStringBuffer(&rr->User);
+    RtlDeleteElementGenericTableAvl(&v->rules, rr);
+
+    if (!_HasRules(v)) v->terminal = FALSE;
+
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS TrieDeleteRule(_In_ PTrie trie, _In_ PCUNICODE_STRING fullPath,
+                        _In_ PCUNICODE_STRING userKey) {
+    if (!trie || !fullPath || !userKey) return STATUS_INVALID_PARAMETER;
+
+    enum { MAX_SEGS = 256 };
+    PVertex pathVerts[MAX_SEGS];
+    UNICODE_STRING pathSegs[MAX_SEGS];
+    ULONG depth = 0;
+
+    ExAcquirePushLockExclusive(&trie->Lock);
+
+    PVertex cur = trie->Root;
+    pathVerts[depth++] = cur;
+
+    PT_SEG_ITER it;
+    PtSegIterInit(&it, fullPath);
+    UNICODE_STRING seg;
+    while (PtSegNext(&it, &seg)) {
+        if (depth >= MAX_SEGS) {
+            ExReleasePushLockExclusive(&trie->Lock);
+            return STATUS_NAME_TOO_LONG;
+        }
+        PChildRec c = VertexFindChild(cur, &seg);
+        if (!c) {
+            ExReleasePushLockExclusive(&trie->Lock);
+            return STATUS_NOT_FOUND;
+        }
+        pathSegs[depth - 1] = seg;
+        cur = c->Node;
+        pathVerts[depth++] = cur;
+    }
+
+    NTSTATUS st = VertexDeleteRule(cur, userKey);
+    if (!NT_SUCCESS(st)) {
+        ExReleasePushLockExclusive(&trie->Lock);
+        return st;
+    }
+
+    while (depth > 1) {
+        PVertex leaf = pathVerts[depth - 1];
+        if (_HasChildren(leaf) || _HasRules(leaf) || leaf->terminal) break;
+
+        PVertex parent = pathVerts[depth - 2];
+        UNICODE_STRING segToLeaf = pathSegs[depth - 2];
+
+        PChildRec childRec = VertexFindChild(parent, &segToLeaf);
+        if (!childRec || childRec->Node != leaf) {
+            break;
+        }
+
+        _FreeUnicodeStringBuffer(&childRec->Key);
+        RtlDeleteElementGenericTableAvl(&parent->children, childRec);
+
+        ExFreePool(leaf);
+
+        depth--;
+    }
+
+    ExReleasePushLockExclusive(&trie->Lock);
+    return STATUS_SUCCESS;
+}
+
+// Export import
+
+static NTSTATUS WriteAt(HANDLE h, ULONGLONG *off, const void *buf, ULONG len) {
+    IO_STATUS_BLOCK ios = {0};
+    LARGE_INTEGER o;
+    o.QuadPart = (LONGLONG)(*off);
+    NTSTATUS st =
+        ZwWriteFile(h, NULL, NULL, NULL, &ios, (PVOID)buf, len, &o, NULL);
+    if (NT_SUCCESS(st)) *off += len;
+    return st;
+}
+static NTSTATUS ReadAt(HANDLE h, ULONGLONG *off, void *buf, ULONG len) {
+    IO_STATUS_BLOCK ios = {0};
+    LARGE_INTEGER o;
+    o.QuadPart = (LONGLONG)(*off);
+    NTSTATUS st = ZwReadFile(h, NULL, NULL, NULL, &ios, buf, len, &o, NULL);
+    if (NT_SUCCESS(st)) *off += len;
+    return st;
+}
+
+static ULONG CountRules(_In_ PVertex v) {
+    ULONG c = 0;
+    PVOID it = NULL;
+    while (RtlEnumerateGenericTableWithoutSplayingAvl(&v->rules, &it)) ++c;
+    return c;
+}
+static ULONG CountChildren(_In_ PVertex v) {
+    ULONG c = 0;
+    PVOID it = NULL;
+    while (RtlEnumerateGenericTableWithoutSplayingAvl(&v->children, &it)) ++c;
+    return c;
+}
+
+static NTSTATUS WriteVertex(HANDLE h, ULONGLONG *off, _In_ PVertex v) {
+    NTSTATUS st;
+    UCHAR term = v->terminal ? 1 : 0;
+    ULONG rc = CountRules(v);
+    ULONG cc = CountChildren(v);
+
+    st = WriteAt(h, off, &term, sizeof(term));
+    if (!NT_SUCCESS(st)) return st;
+    st = WriteAt(h, off, &rc, sizeof(rc));
+    if (!NT_SUCCESS(st)) return st;
+    st = WriteAt(h, off, &cc, sizeof(cc));
+    if (!NT_SUCCESS(st)) return st;
+
+    PVOID it = NULL;
+    for (;;) {
+        PRuleRec rr = (PRuleRec)RtlEnumerateGenericTableWithoutSplayingAvl(
+            &v->rules, &it);
+        if (!rr) break;
+        USHORT ulen = rr->User.Length;
+        st = WriteAt(h, off, &ulen, sizeof(ulen));
+        if (!NT_SUCCESS(st)) return st;
+        st = WriteAt(h, off, rr->User.Buffer, ulen);
+        if (!NT_SUCCESS(st)) return st;
+        st = WriteAt(h, off, &rr->R.mask, sizeof(rr->R.mask));
+        if (!NT_SUCCESS(st)) return st;
+    }
+
+    it = NULL;
+    for (;;) {
+        PChildRec cr = (PChildRec)RtlEnumerateGenericTableWithoutSplayingAvl(
+            &v->children, &it);
+        if (!cr) break;
+        USHORT klen = cr->Key.Length;
+        st = WriteAt(h, off, &klen, sizeof(klen));
+        if (!NT_SUCCESS(st)) return st;
+        st = WriteAt(h, off, cr->Key.Buffer, klen);
+        if (!NT_SUCCESS(st)) return st;
+        st = WriteVertex(h, off, cr->Node);
+        if (!NT_SUCCESS(st)) return st;
+    }
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS ReadVertex(HANDLE h, ULONGLONG *off, _Inout_ PVertex parent) {
+    NTSTATUS st;
+    UCHAR term = 0;
+    ULONG rc = 0, cc = 0;
+
+    st = ReadAt(h, off, &term, sizeof(term));
+    if (!NT_SUCCESS(st)) return st;
+    st = ReadAt(h, off, &rc, sizeof(rc));
+    if (!NT_SUCCESS(st)) return st;
+    st = ReadAt(h, off, &cc, sizeof(cc));
+    if (!NT_SUCCESS(st)) return st;
+
+    parent->terminal = (term != 0);
+
+    for (ULONG i = 0; i < rc; ++i) {
+        USHORT ulen = 0;
+        st = ReadAt(h, off, &ulen, sizeof(ulen));
+        if (!NT_SUCCESS(st)) return st;
+        UNICODE_STRING usr = {0};
+        usr.Length = usr.MaximumLength = ulen;
+        usr.Buffer =
+            (PWCH)ExAllocatePoolWithTag(NonPagedPoolNx, ulen, POOL_TAG_STR);
+        if (!usr.Buffer) return STATUS_INSUFFICIENT_RESOURCES;
+        st = ReadAt(h, off, usr.Buffer, ulen);
+        if (!NT_SUCCESS(st)) {
+            ExFreePool(usr.Buffer);
+            return st;
+        }
+        ULONG mask = 0;
+        st = ReadAt(h, off, &mask, sizeof(mask));
+        if (!NT_SUCCESS(st)) {
+            ExFreePool(usr.Buffer);
+            return st;
+        }
+        st = VertexUpsertRule(parent, &usr, (ACCESS_MASK)mask);
+        ExFreePool(usr.Buffer);
+        if (!NT_SUCCESS(st)) return st;
+    }
+
+    for (ULONG i = 0; i < cc; ++i) {
+        USHORT klen = 0;
+        st = ReadAt(h, off, &klen, sizeof(klen));
+        if (!NT_SUCCESS(st)) return st;
+        UNICODE_STRING key = {0};
+        key.Length = key.MaximumLength = klen;
+        key.Buffer =
+            (PWCH)ExAllocatePoolWithTag(NonPagedPoolNx, klen, POOL_TAG_STR);
+        if (!key.Buffer) return STATUS_INSUFFICIENT_RESOURCES;
+        st = ReadAt(h, off, key.Buffer, klen);
+        if (!NT_SUCCESS(st)) {
+            ExFreePool(key.Buffer);
+            return st;
+        }
+
+        PVertex child = NULL;
+        st = VertexFindOrCreateChild(parent, &key, &child);
+        ExFreePool(key.Buffer);
+        if (!NT_SUCCESS(st)) return st;
+
+        st = ReadVertex(h, off, child);
+        if (!NT_SUCCESS(st)) return st;
+    }
+    return STATUS_SUCCESS;
+}
+
+_IRQL_requires_(PASSIVE_LEVEL) NTSTATUS TrieSaveToCacheFile(_In_ PTrie trie) {
+    if (!trie) return STATUS_INVALID_PARAMETER;
+
+    UNICODE_STRING path;
+    RtlInitUnicodeString(&path, CACHE_PATH);
+    OBJECT_ATTRIBUTES oa;
+    InitializeObjectAttributes(
+        &oa, &path, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    HANDLE h = NULL;
+    IO_STATUS_BLOCK ios = {0};
+    NTSTATUS st = ZwCreateFile(
+        &h, GENERIC_WRITE | SYNCHRONIZE, &oa, &ios, NULL, FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ, FILE_OVERWRITE_IF,
+        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+    if (!NT_SUCCESS(st)) return st;
+
+    ULONGLONG off = 0;
+    ExAcquirePushLockShared(&trie->Lock);
+    st = WriteVertex(h, &off, trie->Root);
+    ExReleasePushLockShared(&trie->Lock);
+
+    ZwClose(h);
+    return st;
+}
+
+_IRQL_requires_(PASSIVE_LEVEL) NTSTATUS
+    TrieInitFromCacheFile(_Inout_ PTrie trie) {
+    if (!trie) return STATUS_INVALID_PARAMETER;
+
+    UNICODE_STRING path;
+    RtlInitUnicodeString(&path, CACHE_PATH);
+    OBJECT_ATTRIBUTES oa;
+    InitializeObjectAttributes(
+        &oa, &path, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    HANDLE h = NULL;
+    IO_STATUS_BLOCK ios = {0};
+    NTSTATUS st = ZwCreateFile(
+        &h, GENERIC_READ | SYNCHRONIZE, &oa, &ios, NULL, FILE_ATTRIBUTE_NORMAL,
+        FILE_SHARE_READ, FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT, NULL, 0);
+    if (!NT_SUCCESS(st)) return st;
+
+    PVertex newRoot = NULL;
+    st = VertexCreate(&newRoot);
+    if (!NT_SUCCESS(st)) {
+        ZwClose(h);
+        return st;
+    }
+
+    ULONGLONG off = 0;
+    st = ReadVertex(h, &off, newRoot);
+    ZwClose(h);
+    if (!NT_SUCCESS(st)) {
+        VertexDestroyRecursive(newRoot);
+        return st;
+    }
+
+    ExAcquirePushLockExclusive(&trie->Lock);
+    PVertex old = trie->Root;
+    trie->Root = newRoot;
+    ExReleasePushLockExclusive(&trie->Lock);
+
+    VertexDestroyRecursive(old);
+    return STATUS_SUCCESS;
 }
 
 #endif  // H_SRC_DRIVER_TRIE_H

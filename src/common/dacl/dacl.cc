@@ -1,4 +1,5 @@
 #include "dacl.h"
+#include "service/log.h"
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -77,12 +78,11 @@ SummarizedRule Summarize(const std::vector<Rule> &rules) {
         return {};
     }
 
-    SummarizedRule res{
-
-    };
+    SummarizedRule res{};
 
     strncpy_s(res.prefix, rules.front().path.c_str(), sizeof(res.prefix));
     strncpy_s(res.sid, rules.front().sid.c_str(), sizeof(res.sid));
+    logA("Summarizing %d rules", rules.size());
 
     for (const auto &rule : rules) {
         ACCESS_MASK mask{};
@@ -117,6 +117,10 @@ SummarizedRule Summarize(const std::vector<Rule> &rules) {
             res.deny |= mask;
         }
     }
+
+    logA("Summarized allow: 0x%x", res.allow);
+    logA("Summarized deny: 0x%x", res.deny);
+    logA("Full summarize: 0x%x", res.allow & ~res.deny);
 
     return res;
 }

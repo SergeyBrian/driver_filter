@@ -1,6 +1,7 @@
 #include "pipe.h"
 #include <cstring>
 #include "common/dacl/rule.h"
+#include "common/dacl/user.h"
 #include "service/ioctl.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -103,9 +104,50 @@ static void ProcessRequest(const HANDLE pipe) {
         dacl::Rule rule =
             internal::DecodeRule(buf + strlen(internal::DelMessage) + 1);
 
+        auto old_rule = database::GetRule(rule.id);
+        if (!old_rule) {
+            send_resp(internal::RespError);
+            return;
+        }
+        logA("[DEBUG] deleting rule %d (%s) %s", rule.id,
+             old_rule->path.c_str(), old_rule->user.c_str());
+
         if (!database::DeleteRule(rule)) {
             send_resp(internal::RespError);
+            return;
         }
+
+        auto rules = database::GetRules(
+            {.path = old_rule->path, .user = old_rule->user});
+        if (rules.empty()) {
+            auto user = dacl::user::Get(old_rule->user);
+            if (!user) {
+                logA("[ERROR] User %s not found", old_rule->user.c_str());
+                send_resp(internal::RespError);
+                return;
+            }
+
+            if (!ioctl::DeleteRule(old_rule->path, *user)) {
+                logA("[ERROR] ioctl DeleteRule failed");
+                send_resp(internal::RespError);
+            }
+            send_resp(internal::RespOk);
+            return;
+        }
+
+        SummarizedRule summarized = dacl::Summarize(rules);
+        if (strlen(summarized.sid) == 0) {
+            logA("[ERROR] Summarize failed");
+            send_resp(internal::RespError);
+            return;
+        }
+
+        if (!ioctl::UpdateRule(summarized)) {
+            logA("[ERROR] ioctl UpdateRule failed");
+            send_resp(internal::RespError);
+            return;
+        }
+
         send_resp(internal::RespOk);
         return;
     }
@@ -147,6 +189,19 @@ static void ProcessRequest(const HANDLE pipe) {
             }
             sent_size += written;
         }
+
+        return;
+    }
+
+    if (strncmp(buf, internal::ToggleNotifierMessage,
+                strlen(internal::ToggleNotifierMessage)) == 0) {
+        auto start = *reinterpret_cast<bool *>(
+            buf + strlen(internal::ToggleNotifierMessage) + 1);
+        if (!ioctl::ToggleNotifier(start)) {
+            send_resp(internal::RespError);
+            return;
+        }
+        send_resp(internal::RespOk);
 
         return;
     }

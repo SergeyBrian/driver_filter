@@ -18,6 +18,9 @@
 
 #define SDDL_DACFLT L"D:P(A;;GA;;;SY)(A;;GA;;;BA)"
 
+#define NOTIFY_LOG_FILE \
+    L"\\??\\C:\\ProgramData\\DriverFilterSvc\\db\\notifier-log.txt"
+
 static PFLT_FILTER gFilterHandle;
 static NTSTATUS status;
 
@@ -31,6 +34,7 @@ DRIVER_DISPATCH CtlCreateClose, CtlDeviceControl;
 
 static ULONG_PTR OperationStatusCtx = 1;
 static PTrie gTrie;
+static BOOLEAN NotifierActive = FALSE;
 
 #define DBG_TRACE_ROUTINES 0x1
 #define DBG_TRACE_STATUS 0x1 << 1
@@ -57,6 +61,8 @@ typedef struct _PRE_CTX {
     (FlagOn(gTraceFlags, (_dbgLevel)) ? DbgPrint _string : ((int)0))
 
 // === Forward declarations ===
+
+void NotifierCallback(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create);
 
 DRIVER_INITIALIZE DriverEntry;
 NTSTATUS
@@ -179,7 +185,10 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject,
     DBG_PRINT(DBG_TRACE_ROUTINES, ("DriverFilter!DriverEntry Entered\n"));
 
     TrieCreate(&gTrie);
-    // TODO иницилизировать дефлотными данными при старте
+    if (!NT_SUCCESS(TrieInitFromCacheFile(gTrie))) {
+        DBG_PRINT(DBG_ERROR,
+                  ("DriverFilter!DriverEntry failed to initialize cache"));
+    }
 
     status =
         FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
@@ -335,6 +344,9 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     ULONG inLen = sp->Parameters.DeviceIoControl.InputBufferLength;
     ULONG outLen = sp->Parameters.DeviceIoControl.OutputBufferLength;
     SummarizedRule rule;
+
+    ANSI_STRING ansi_prefix;
+    ANSI_STRING ansi_username;
     UNICODE_STRING prefix, username;
 
     UNREFERENCED_PARAMETER(DevObj);
@@ -362,9 +374,6 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
             DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl Successfully "
                                   "decoded rule for path %s user %s",
                                   rule.prefix, rule.sid));
-            ANSI_STRING ansi_prefix;
-            ANSI_STRING ansi_username;
-
             RtlInitAnsiString(&ansi_prefix, rule.prefix);
             RtlInitAnsiString(&ansi_username, rule.sid);
 
@@ -372,6 +381,7 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
             RtlAnsiStringToUnicodeString(&username, &ansi_username, TRUE);
 
             TrieInsertRule(gTrie, &prefix, &username, rule.allow & ~rule.deny);
+            TrieSaveToCacheFile(gTrie);
 
             ACCESS_MASK test = 0;
             if (!TrieLookupRule(gTrie, &prefix, &username, &test)) {
@@ -392,6 +402,47 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
                                   "success. 0x%x = 0x%x",
                                   rule.allow & ~rule.deny, test));
 
+            st = STATUS_SUCCESS;
+            break;
+        case IOCTL_DELETE_RULE:
+            DBG_PRINT(
+                DBG_DEBUG,
+                ("DriverFilter!CtlDeviceControl Received IOCTL_DELETE_RULE"));
+
+            RtlInitAnsiString(&ansi_prefix, buf);
+            RtlInitAnsiString(&ansi_username, (char *)(buf) + strlen(buf) + 1);
+
+            DBG_PRINT(
+                DBG_DEBUG,
+                ("DriverFilter!CtlDeviceControl will delete prefix=%s sid=%s",
+                 ansi_prefix.Buffer, ansi_username.Buffer));
+
+            RtlAnsiStringToUnicodeString(&prefix, &ansi_prefix, TRUE);
+            RtlAnsiStringToUnicodeString(&username, &ansi_username, TRUE);
+
+            TrieDeleteRule(gTrie, &prefix, &username);
+            TrieSaveToCacheFile(gTrie);
+
+            DBG_PRINT(DBG_DEBUG, ("DriverFilter!CtlDeviceControl trie delete "
+                                  "success."));
+
+            st = STATUS_SUCCESS;
+            break;
+        case IOCTL_TOGGLE_NOTIFIER:
+            BOOLEAN stop = !(*(BOOLEAN *)buf);
+
+            DBG_PRINT(
+                DBG_DEBUG,
+                ("DriverFilter!CtlDeviceControl toggle notifier, start=%d",
+                 stop));
+
+            if (stop == NotifierActive) {
+                st = STATUS_SUCCESS;
+                break;
+            }
+
+            NotifierActive = stop;
+            PsSetCreateProcessNotifyRoutine(NotifierCallback, NotifierActive);
             st = STATUS_SUCCESS;
             break;
         default:
@@ -701,4 +752,32 @@ DoFilterOperation(_In_ PFLT_CALLBACK_DATA Data) {
     if (mj == IRP_MJ_LOCK_CONTROL) return TRUE;
 
     return FALSE;
+}
+
+void NotifierCallback(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
+    UNREFERENCED_PARAMETER(ParentId);
+
+    DBG_PRINT(DBG_DEBUG, ("DriverFilter!NotifierCallback: Entered\n"));
+    UNICODE_STRING path;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK iosb;
+    HANDLE file;
+    RtlInitUnicodeString(&path, NOTIFY_LOG_FILE);
+    WCHAR msg[128];
+
+    swprintf(msg, L"Process %s: %llu\n", (Create ? L"created" : L"exited"),
+             (ULONG64)ProcessId);
+
+    InitializeObjectAttributes(
+        &oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    if (NT_SUCCESS(ZwCreateFile(&file, FILE_APPEND_DATA, &oa, &iosb, NULL,
+                                FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
+                                FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT,
+                                NULL, 0))) {
+        SIZE_T len = wcslen(msg) * sizeof(WCHAR);
+        ZwWriteFile(file, NULL, NULL, NULL, &iosb, (PVOID)msg, (ULONG)len, NULL,
+                    NULL);
+        ZwClose(file);
+    }
 }
