@@ -135,8 +135,6 @@ static CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
     {IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION, 0, PreOperationCallback, NULL,
      0},
 
-    {IRP_MJ_CLEANUP, 0, PreOperationCallback, NoPostOperationCallback, 0},
-
     {IRP_MJ_OPERATION_END, 0, 0, 0, 0},
 };
 
@@ -219,7 +217,7 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject,
 
     gCtlDev->Flags |= DO_BUFFERED_IO;
 
-    gCtlDev->Flags &= ~DO_DEVICE_INITIALIZING;
+    gCtlDev->Flags &= ~(ULONG)DO_DEVICE_INITIALIZING;
 
     return STATUS_SUCCESS;
 
@@ -341,7 +339,6 @@ NTSTATUS CtlDeviceControl(PDEVICE_OBJECT DevObj, PIRP Irp) {
     ULONG code = sp->Parameters.DeviceIoControl.IoControlCode;
     NTSTATUS st = STATUS_INVALID_DEVICE_REQUEST;
     PVOID buf = Irp->AssociatedIrp.SystemBuffer;
-    ULONG inLen = sp->Parameters.DeviceIoControl.InputBufferLength;
     ULONG outLen = sp->Parameters.DeviceIoControl.OutputBufferLength;
     SummarizedRule rule;
 
