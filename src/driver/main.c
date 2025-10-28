@@ -754,17 +754,31 @@ DoFilterOperation(_In_ PFLT_CALLBACK_DATA Data) {
 void NotifierCallback(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
     UNREFERENCED_PARAMETER(ParentId);
 
-    DBG_PRINT(DBG_DEBUG, ("DriverFilter!NotifierCallback: Entered\n"));
     UNICODE_STRING path;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
     HANDLE file;
+    WCHAR msg[512];
+    PEPROCESS proc;
+    PUNICODE_STRING name = NULL;
+
+    if (NT_SUCCESS(PsLookupProcessByProcessId(ProcessId, &proc))) {
+        if (NT_SUCCESS(SeLocateProcessImageName(proc, &name)) && name) {
+            swprintf(msg, L"Process %s: %llu (%wZ)\n",
+                     (Create ? L"created" : L"exited"), (ULONG64)ProcessId,
+                     name);
+            ExFreePool(name);
+        } else {
+            swprintf(msg, L"Process %s: %llu (unknown)\n",
+                     (Create ? L"created" : L"exited"), (ULONG64)ProcessId);
+        }
+        ObDereferenceObject(proc);
+    } else {
+        swprintf(msg, L"Process %s: %llu (lookup failed)\n",
+                 (Create ? L"created" : L"exited"), (ULONG64)ProcessId);
+    }
+
     RtlInitUnicodeString(&path, NOTIFY_LOG_FILE);
-    WCHAR msg[128];
-
-    swprintf(msg, L"Process %s: %llu\n", (Create ? L"created" : L"exited"),
-             (ULONG64)ProcessId);
-
     InitializeObjectAttributes(
         &oa, &path, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
 
@@ -772,9 +786,8 @@ void NotifierCallback(HANDLE ParentId, HANDLE ProcessId, BOOLEAN Create) {
                                 FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
                                 FILE_OPEN_IF, FILE_SYNCHRONOUS_IO_NONALERT,
                                 NULL, 0))) {
-        SIZE_T len = wcslen(msg) * sizeof(WCHAR);
-        ZwWriteFile(file, NULL, NULL, NULL, &iosb, (PVOID)msg, (ULONG)len, NULL,
-                    NULL);
+        ULONG len = (ULONG)(wcslen(msg) * sizeof(WCHAR));
+        ZwWriteFile(file, NULL, NULL, NULL, &iosb, msg, len, NULL, NULL);
         ZwClose(file);
     }
 }
